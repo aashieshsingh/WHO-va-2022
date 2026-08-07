@@ -81,6 +81,33 @@ body {
   line-height: 1.18;
   letter-spacing: -0.035em;
 }
+.header-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.header-actions button {
+  min-height: 32px;
+  padding: 0 12px;
+  color: #fff;
+  background: #2563eb;
+  border: 1px solid rgb(255 255 255 / 28%);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.header-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.header-actions button:hover:not(:disabled) {
+  background: #1d4ed8;
+}
 
 .language-picker {
   flex: 0 0 auto;
@@ -179,7 +206,7 @@ who-va-2022-form [data-testid^="question-card-"]:focus-within {
 
 @media (max-width: 680px) {
   .demo-header {
-    align-items: center;
+    align-items: flex-start;
     gap: 12px;
     padding: 20px;
   }
@@ -204,4 +231,174 @@ who-va-2022-form [data-testid^="question-card-"]:focus-within {
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+.entry-shell {
+  width: min(100% - 32px, 760px);
+  margin: 24px auto 0;
+}
+
+.entry-form {
+  padding: clamp(1rem, 2.5vw, 1.5rem);
+  color: var(--who-2022-web-color-ink);
+  background: var(--who-2022-web-color-surface);
+  border: 1px solid var(--who-2022-web-color-border);
+  border-radius: 8px;
+  box-shadow: var(--who-2022-web-shadow-card);
+}
+
+.entry-form__header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 240px);
+  gap: 16px;
+  align-items: end;
+  margin-bottom: 18px;
+}
+
+.entry-form h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+.entry-form p {
+  margin: 4px 0 0;
+  color: var(--who-2022-web-color-muted);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.entry-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.entry-grid__wide {
+  grid-column: 1 / -1;
+}
+
+.entry-form label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--who-2022-web-color-ink-subtle);
+  font-size: 0.86rem;
+  font-weight: 650;
+}
+
+.entry-form input,
+.entry-form textarea,
+.entry-form select {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  color: var(--who-2022-web-color-ink);
+  background: #fff;
+  border: 1px solid var(--who-2022-web-color-control-border);
+  border-radius: 8px;
+  font: inherit;
+  font-weight: 500;
+}
+
+.entry-form input[readonly] {
+  color: var(--who-2022-web-color-brand-deep);
+  background: var(--who-2022-web-color-brand-soft);
+}
+
+.entry-form textarea {
+  resize: vertical;
+}
+
+.entry-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.entry-actions button {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--who-2022-web-color-control-border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--who-2022-web-color-ink);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.entry-actions button[type="submit"] {
+  color: #fff;
+  border-color: var(--who-2022-web-color-brand);
+  background: var(--who-2022-web-color-brand);
+}
+
+.entry-output {
+  display: block;
+  margin-top: 12px;
+  padding: 12px;
+  overflow: auto;
+  white-space: pre-wrap;
+  color: var(--who-2022-web-color-ink);
+  background: #fff;
+  border: 1px solid var(--who-2022-web-color-border);
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 0.82rem;
+}
+.entry-summary {
+  display: block;
+  margin-top: 14px;
+  padding: 12px;
+  white-space: pre-wrap;
+  color: var(--who-2022-web-color-ink-subtle);
+  background: var(--who-2022-web-color-brand-soft);
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 680px) {
+  .entry-shell {
+    width: min(100% - 24px, 760px);
+    margin-top: 16px;
+  }
+
+  .entry-form__header,
+  .entry-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.who-va-shell {
+  min-height: calc(100vh - 112px);
+}
+
+.who-va-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  width: min(100% - 32px, 760px);
+  margin: 16px auto 0;
+}
+
+.who-va-toolbar button {
+  min-height: 38px;
+  padding: 0 12px;
+  color: var(--who-2022-web-color-brand-deep);
+  background: #fff;
+  border: 1px solid var(--who-2022-web-color-border);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 700;
+  cursor: pointer;
 }

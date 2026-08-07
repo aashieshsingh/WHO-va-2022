@@ -12,14 +12,141 @@
       <div>
         <h1>WHO 2022 Verbal Autopsy</h1>
       </div>
-      <label class="language-picker">
-        <span class="sr-only">भाषा / Language</span>
-        <select id="language" aria-label="Instrument language"></select>
-      </label>
+      <div class="header-actions">
+        <button id="new-case-entry" type="button">Case data entry</button>
+        <button id="header-start-selected-entry" class="start-selected-entry" type="button" disabled>
+          Fill WHO VA 2022 Instrument
+        </button>
+        <label class="language-picker">
+          <span class="sr-only">Language</span>
+          <select id="language" aria-label="Instrument language"></select>
+        </label>
+      </div>
     </header>
 
     <main>
-      <who-va-2022-form id="who-va-form" locale="hi"></who-va-2022-form>
+      <section id="case-picker-shell" class="entry-shell" aria-labelledby="case-picker-title">
+        <div class="entry-form">
+          <div class="entry-form__header">
+            <div>
+              <h2 id="case-picker-title">Select deceased</h2>
+              <p>Select a deceased name before filling the WHO VA 2022 instrument.</p>
+            </div>
+          </div>
+
+          <div class="entry-grid">
+            <label class="entry-grid__wide">
+              <span>Deceased name</span>
+              <select id="deceased-entry-select">
+                <option value="">No saved deceased entries</option>
+              </select>
+            </label>
+          </div>
+
+          <output id="selected-entry-output" class="entry-summary" hidden></output>
+
+          <div class="entry-actions">
+            <button id="start-selected-entry" class="start-selected-entry" type="button" disabled>
+              Fill WHO VA 2022 Instrument
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section id="case-entry-shell" class="entry-shell" aria-labelledby="case-entry-title" hidden>
+        <form id="case-entry-form" class="entry-form">
+          <div class="entry-form__header">
+            <div>
+              <h2 id="case-entry-title">Case data entry</h2>
+              <p>Register household and deceased details before starting the verbal autopsy.</p>
+            </div>
+            <label>
+              <span>Uid</span>
+              <input id="uid" name="uid" type="text" readonly />
+            </label>
+          </div>
+
+          <div class="entry-grid">
+            <label>
+              <span>District</span>
+              <input name="district" type="text" autocomplete="address-level2" required />
+            </label>
+            <label>
+              <span>Block</span>
+              <input name="block" type="text" required />
+            </label>
+            <label>
+              <span>Villages</span>
+              <input name="villages" type="text" required />
+            </label>
+            <label>
+              <span>Phc</span>
+              <input name="phc" type="text" required />
+            </label>
+            <label>
+              <span>Subcentre</span>
+              <input name="subcentre" type="text" required />
+            </label>
+            <label>
+              <span>Date</span>
+              <input name="date" type="date" required />
+            </label>
+            <label>
+              <span>Name of head of the Household</span>
+              <input name="householdHeadName" type="text" required />
+            </label>
+            <label>
+              <span>Full name of the deceased</span>
+              <input name="deceasedFullName" type="text" required />
+            </label>
+            <label class="entry-grid__wide">
+              <span>House address of the deceased</span>
+              <textarea name="deceasedHouseAddress" rows="3" required></textarea>
+            </label>
+            <label>
+              <span>Pin code</span>
+              <input
+                name="pinCode"
+                type="text"
+                inputmode="numeric"
+                pattern="[0-9]{6}"
+                maxlength="6"
+                required
+              />
+            </label>
+            <label>
+              <span>Death date</span>
+              <input name="deathDate" type="date" required />
+            </label>
+            <label>
+              <span>Age at the time of death</span>
+              <input
+                name="ageAtDeath"
+                type="number"
+                inputmode="numeric"
+                min="0"
+                max="130"
+                step="1"
+                required
+              />
+            </label>
+          </div>
+
+          <div class="entry-actions">
+            <button id="clear-case-entry" type="button">Clear</button>
+            <button type="submit">Save entry</button>
+          </div>
+        </form>
+        <output id="case-entry-output" class="entry-output" hidden></output>
+      </section>
+
+      <section id="who-va-shell" class="who-va-shell" hidden>
+        <div class="who-va-toolbar">
+          <button id="choose-case-entry" type="button">Select deceased</button>
+          <button id="edit-case-entry" type="button">Edit case entry</button>
+        </div>
+        <who-va-2022-form id="who-va-form" locale="hi"></who-va-2022-form>
+      </section>
     </main>
 
     <script type="module" src="/main.ts"></script>
