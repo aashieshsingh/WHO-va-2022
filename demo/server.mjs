@@ -8,6 +8,12 @@ import { runMigrations } from "./migrate.mjs";
 const PORT = Number(process.env.PORT ?? 5173);
 const pool = createPostgresPool();
 
+const corsHeaders = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET,POST,OPTIONS",
+  "access-control-allow-headers": "content-type"
+};
+
 async function readJsonBody(request) {
   const chunks = [];
   for await (const chunk of request) chunks.push(chunk);
@@ -18,7 +24,8 @@ async function readJsonBody(request) {
 function sendJson(response, statusCode, body) {
   response.writeHead(statusCode, {
     "content-type": "application/json; charset=utf-8",
-    "cache-control": "no-store"
+    "cache-control": "no-store",
+    ...corsHeaders
   });
   response.end(JSON.stringify(body));
 }
@@ -82,6 +89,12 @@ const vite = await createViteServer({
 
 const server = createHttpServer(async (request, response) => {
   try {
+    if (request.method === "OPTIONS" && request.url?.startsWith("/api/")) {
+      response.writeHead(204, corsHeaders);
+      response.end();
+      return;
+    }
+
     if (request.url === "/api/health" && request.method === "GET") {
       await pool.query("select 1");
       sendJson(response, 200, { ok: true, database: process.env.PGDATABASE ?? "whova" });

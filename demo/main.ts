@@ -134,20 +134,23 @@ const selectedStoredCaseEntry = () => {
   return readStoredCaseEntries().find((entry) => entry.uid === uid);
 };
 
+let pickerStatusMessage: string | undefined;
+
 const renderSelectedEntrySummary = () => {
   const selected = selectedStoredCaseEntry();
   for (const button of startSelectedEntries) button.disabled = !selected;
   if (!selectedEntryOutput) return;
 
   if (!selected) {
-    selectedEntryOutput.hidden = true;
-    selectedEntryOutput.textContent = "";
+    selectedEntryOutput.hidden = !pickerStatusMessage;
+    selectedEntryOutput.textContent = pickerStatusMessage ?? "";
     return;
   }
 
   const entry = selected.caseEntry;
   selectedEntryOutput.hidden = false;
   selectedEntryOutput.textContent = [
+    ...(pickerStatusMessage ? [pickerStatusMessage, ""] : []),
     `UID: ${entry.uid}`,
     `Household head: ${entry.householdHeadName}`,
     `Address: ${entry.deceasedHouseAddress}`,
@@ -268,8 +271,16 @@ const applyCaseEntryToInstrument = (caseEntry: CaseEntryData, whoVaData: Record<
   whoVaShell?.scrollIntoView({ block: "start" });
 };
 
+const formEntriesApiUrl = () => {
+  const isLocalHost = window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost";
+  if (isLocalHost && window.location.port && window.location.port !== "5175") {
+    return "http://127.0.0.1:5175/api/form-entries";
+  }
+  return "/api/form-entries";
+};
+
 const saveFormEntry = async (payload: SaveFormEntryPayload): Promise<SavedFormEntry> => {
-  const response = await fetch("/api/form-entries", {
+  const response = await fetch(formEntriesApiUrl(), {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload)
@@ -277,21 +288,30 @@ const saveFormEntry = async (payload: SaveFormEntryPayload): Promise<SavedFormEn
   const responseText = await response.text();
   let body: { ok: boolean; saved?: SavedFormEntry; error?: string } | undefined;
   try {
-    body = responseText ? (JSON.parse(responseText) as { ok: boolean; saved?: SavedFormEntry; error?: string }) : undefined;
+    body = responseText
+      ? (JSON.parse(responseText) as { ok: boolean; saved?: SavedFormEntry; error?: string })
+      : undefined;
   } catch {
     throw new Error(
       `The save API returned a non-JSON response. Open the DB-backed demo server, not the plain Vite server. Status: ${response.status}.`
     );
   }
   if (!response.ok || !body?.ok || !body.saved) {
-    throw new Error(body?.error ?? "The entry could not be saved");
+    throw new Error(
+      body?.error ??
+        `The entry could not be saved. Status: ${response.status}. Response: ${responseText || "empty"}`
+    );
   }
   return body.saved;
 };
 
-deceasedEntrySelect?.addEventListener("change", renderSelectedEntrySummary);
+deceasedEntrySelect?.addEventListener("change", () => {
+  pickerStatusMessage = undefined;
+  renderSelectedEntrySummary();
+});
 
 newCaseEntry?.addEventListener("click", () => {
+  pickerStatusMessage = undefined;
   clearEntryFormValues();
   setVisibleStep("entry");
   entryShell?.scrollIntoView({ block: "start" });
@@ -328,6 +348,7 @@ entryForm?.addEventListener("submit", (event) => {
       rememberCaseEntry(entry, whoVaData);
       renderDeceasedDropdown();
       if (deceasedEntrySelect) deceasedEntrySelect.value = entry.uid;
+      pickerStatusMessage = `Entry saved successfully for ${entry.deceasedFullName}.`;
       renderSelectedEntrySummary();
       currentCaseEntry = undefined;
       currentWhoVaData = undefined;
