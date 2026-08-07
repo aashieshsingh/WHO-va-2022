@@ -274,9 +274,17 @@ const saveFormEntry = async (payload: SaveFormEntryPayload): Promise<SavedFormEn
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload)
   });
-  const body = (await response.json()) as { ok: boolean; saved?: SavedFormEntry; error?: string };
-  if (!response.ok || !body.ok || !body.saved) {
-    throw new Error(body.error ?? "The entry could not be saved");
+  const responseText = await response.text();
+  let body: { ok: boolean; saved?: SavedFormEntry; error?: string } | undefined;
+  try {
+    body = responseText ? (JSON.parse(responseText) as { ok: boolean; saved?: SavedFormEntry; error?: string }) : undefined;
+  } catch {
+    throw new Error(
+      `The save API returned a non-JSON response. Open the DB-backed demo server, not the plain Vite server. Status: ${response.status}.`
+    );
+  }
+  if (!response.ok || !body?.ok || !body.saved) {
+    throw new Error(body?.error ?? "The entry could not be saved");
   }
   return body.saved;
 };
