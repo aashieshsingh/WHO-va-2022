@@ -64,6 +64,17 @@ describe("cohesive runtime models", () => {
         questions: [{ ...instrument.questions[0]!, sectionPath: ["missing"] }]
       })
     ).toThrow(/unknown section/i);
+    expect(() =>
+      compileInstrumentDefinition({
+        ...instrument,
+        questions: [
+          {
+            ...instrument.questions[0]!,
+            validation: { required: true, dataType: "string", constraintMessage: {} }
+          }
+        ]
+      })
+    ).toThrow(/validation\.required/i);
   });
 
   it("rejects malformed expression calls and divergent source/AST pairs", () => {

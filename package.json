@@ -49,6 +49,8 @@
   },
   "scripts": {
     "dev": "vite demo --host 127.0.0.1",
+    "dev:db": "node demo/server.mjs",
+    "db:migrate": "node demo/migrate.mjs",
     "build:demo": "vite build demo",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -107,8 +109,8 @@
     "globals": "^17.7.0",
     "jsdom": "^29.1.1",
     "prettier": "^3.9.5",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "react-native": "^0.86.0",
     "react-native-svg": "15.15.4",
     "react-native-web": "^0.21.2",
@@ -119,5 +121,9 @@
     "vite": "^8.1.5",
     "vitest": "^4.1.10"
   },
-  "packageManager": "pnpm@11.9.0"
+  "packageManager": "pnpm@11.9.0",
+  "dependencies": {
+    "@drguptavivek/who-2022-va": "^0.1.0",
+    "pg": "^8.22.0"
+  }
 }

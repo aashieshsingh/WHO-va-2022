@@ -66,6 +66,14 @@ export type ExpressionNode =
     }
   | ExpressionCallNode;
 
+export interface InstrumentQuestionValidation {
+  required: boolean;
+  dataType: AnswerDataType;
+  choiceValues?: string[];
+  constraint?: SourceExpression;
+  constraintMessage: LocalizedText;
+}
+
 export interface InstrumentQuestion {
   name: string;
   order: number;
@@ -87,6 +95,7 @@ export interface InstrumentQuestion {
   relevant?: SourceExpression;
   constraint?: SourceExpression;
   constraintMessage: LocalizedText;
+  validation?: InstrumentQuestionValidation;
   calculation?: SourceExpression;
   sectionPath: string[];
 }

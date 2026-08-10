@@ -32,6 +32,86 @@ const requiredInstrument: InstrumentDefinition = {
     }
   ]
 };
+const requiredControlInstrument: InstrumentDefinition = {
+  id: "validation-control-test",
+  title: "Validation control test",
+  version: "1",
+  defaultLanguage: "English (en)",
+  sourceFile: "generated-test-artifact.json",
+  sections: [{ name: "controls", sourceRow: 1, order: 1, label: { en: "Controls" } }],
+  questions: [
+    {
+      name: "required_choice",
+      order: 1,
+      sourceRow: 2,
+      sourceType: "select_one yes_no",
+      dataType: "string",
+      control: "singleChoice",
+      listName: "yes_no",
+      label: { en: "Required choice" },
+      hint: {},
+      guidance: {},
+      required: true,
+      readOnly: false,
+      constraintMessage: {},
+      sectionPath: ["controls"],
+      choices: [
+        { value: "yes", sourceRow: 3, label: { en: "Yes" } },
+        { value: "no", sourceRow: 4, label: { en: "No" } }
+      ]
+    },
+    {
+      name: "required_multi",
+      order: 2,
+      sourceRow: 5,
+      sourceType: "select_multiple symptom",
+      dataType: "string[]",
+      control: "multipleChoice",
+      listName: "symptom",
+      label: { en: "Required symptoms" },
+      hint: {},
+      guidance: {},
+      required: true,
+      readOnly: false,
+      constraintMessage: {},
+      sectionPath: ["controls"],
+      choices: [
+        { value: "fever", sourceRow: 6, label: { en: "Fever" } },
+        { value: "cough", sourceRow: 7, label: { en: "Cough" } }
+      ]
+    },
+    {
+      name: "required_confirm",
+      order: 3,
+      sourceRow: 8,
+      sourceType: "trigger",
+      dataType: "boolean",
+      control: "confirm",
+      label: { en: "Required confirmation" },
+      hint: {},
+      guidance: {},
+      required: true,
+      readOnly: false,
+      constraintMessage: {},
+      sectionPath: ["controls"]
+    },
+    {
+      name: "required_file",
+      order: 4,
+      sourceRow: 9,
+      sourceType: "file",
+      dataType: "attachment",
+      control: "file",
+      label: { en: "Required file" },
+      hint: {},
+      guidance: {},
+      required: true,
+      readOnly: false,
+      constraintMessage: {},
+      sectionPath: ["controls"]
+    }
+  ]
+};
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -69,6 +149,46 @@ describe("validation navigation", () => {
     root.unmount();
   });
 
+  it("marks non-text required controls invalid after validation", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<WhoVaForm instrument={requiredControlInstrument} />);
+    });
+
+    const complete = Array.from(container.querySelectorAll<HTMLElement>('[role="button"]')).find(
+      (button) => button.textContent === "Complete"
+    );
+    await act(async () => {
+      complete?.click();
+    });
+
+    await vi.waitFor(() =>
+      expect(
+        container
+          .querySelector('[data-testid="question-required_choice-choice-yes"]')
+          ?.getAttribute("aria-invalid")
+      ).toBe("true")
+    );
+    expect(
+      container
+        .querySelector('[data-testid="question-required_multi-choice-fever"]')
+        ?.getAttribute("aria-invalid")
+    ).toBe("true");
+    expect(
+      container.querySelector('[data-testid="question-required_confirm"]')?.getAttribute("aria-invalid")
+    ).toBe("true");
+    expect(
+      container.querySelector('[data-testid="question-required_file"]')?.getAttribute("aria-invalid")
+    ).toBe("true");
+    expect(container.textContent).toContain("Required choice is required");
+    expect(container.textContent).toContain("Required symptoms is required");
+    expect(container.textContent).toContain("Required confirmation is required");
+    expect(container.textContent).toContain("Required file is required");
+
+    root.unmount();
+  });
   it("scrolls to and focuses the first invalid question after Next", async () => {
     const scrollIntoView = vi.fn();
     Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {

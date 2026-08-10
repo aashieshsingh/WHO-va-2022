@@ -339,8 +339,9 @@ export function createWhoVaQuestionControls(primitives: WhoVaQuestionControlPrim
   }
 
   function SingleChoice(props: WhoVaQuestionControlProps) {
-    const { question, value, locale, onAnswer } = props;
+    const { question, value, locale, issues, onAnswer } = props;
     if (question.name === "language") return <SearchableSingleChoice {...props} />;
+    const hasIssues = issues.length > 0;
     return (question.choices ?? []).map((choice) => {
       const selected = value === choice.value;
       return (
@@ -348,8 +349,13 @@ export function createWhoVaQuestionControls(primitives: WhoVaQuestionControlPrim
           key={choice.value}
           accessibilityRole="radio"
           accessibilityState={{ selected }}
+          aria-invalid={hasIssues || undefined}
           testID={`question-${question.name}-choice-${choice.value}`}
-          style={[questionControlStyles.choice, selected && questionControlStyles.choiceSelected]}
+          style={[
+            questionControlStyles.choice,
+            hasIssues && questionControlStyles.inputError,
+            selected && questionControlStyles.choiceSelected
+          ]}
           onPress={() => onAnswer(choice.value)}
         >
           <PrimitiveText style={questionControlStyles.choiceText}>
@@ -360,9 +366,10 @@ export function createWhoVaQuestionControls(primitives: WhoVaQuestionControlPrim
     });
   }
 
-  function MultipleChoice({ question, value, locale, onAnswer }: WhoVaQuestionControlProps) {
+  function MultipleChoice({ question, value, locale, issues, onAnswer }: WhoVaQuestionControlProps) {
     const selectedValues = Array.isArray(value) ? value : EMPTY_SELECTED_VALUES;
     const selectedSet = useMemo(() => new Set(selectedValues), [selectedValues]);
+    const hasIssues = issues.length > 0;
     return (question.choices ?? []).map((choice) => {
       const selected = selectedSet.has(choice.value);
       return (
@@ -370,8 +377,13 @@ export function createWhoVaQuestionControls(primitives: WhoVaQuestionControlPrim
           key={choice.value}
           accessibilityRole="checkbox"
           accessibilityState={{ checked: selected }}
+          aria-invalid={hasIssues || undefined}
           testID={`question-${question.name}-choice-${choice.value}`}
-          style={[questionControlStyles.choice, selected && questionControlStyles.choiceSelected]}
+          style={[
+            questionControlStyles.choice,
+            hasIssues && questionControlStyles.inputError,
+            selected && questionControlStyles.choiceSelected
+          ]}
           onPress={() =>
             onAnswer(
               selected
@@ -388,12 +400,24 @@ export function createWhoVaQuestionControls(primitives: WhoVaQuestionControlPrim
     });
   }
 
-  function Confirm({ question, value, messages = ENGLISH_UI_MESSAGES, onAnswer }: WhoVaQuestionControlProps) {
+  function Confirm({
+    question,
+    value,
+    messages = ENGLISH_UI_MESSAGES,
+    issues,
+    onAnswer
+  }: WhoVaQuestionControlProps) {
+    const hasIssues = issues.length > 0;
     return (
       <Pressable
         accessibilityRole="button"
+        aria-invalid={hasIssues || undefined}
         testID={`question-${question.name}`}
-        style={[questionControlStyles.button, value === true && questionControlStyles.choiceSelected]}
+        style={[
+          questionControlStyles.button,
+          hasIssues && questionControlStyles.buttonError,
+          value === true && questionControlStyles.choiceSelected
+        ]}
         onPress={() => onAnswer(true)}
       >
         <PrimitiveText style={questionControlStyles.buttonText}>
@@ -409,6 +433,7 @@ export function createWhoVaQuestionControls(primitives: WhoVaQuestionControlPrim
     data,
     platform,
     messages = ENGLISH_UI_MESSAGES,
+    issues,
     onAnswer
   }: WhoVaQuestionControlProps) {
     const [phase, setPhase] = useState<"idle" | "starting" | "recording" | "stopping">("idle");
@@ -444,8 +469,13 @@ export function createWhoVaQuestionControls(primitives: WhoVaQuestionControlPrim
         <Pressable
           accessibilityRole="button"
           accessibilityState={{ disabled, busy: phase === "starting" || phase === "stopping" }}
+          aria-invalid={issues.length > 0 || undefined}
           testID={`question-${question.name}`}
-          style={[questionControlStyles.button, disabled && questionControlStyles.buttonDisabled]}
+          style={[
+            questionControlStyles.button,
+            issues.length > 0 && questionControlStyles.buttonError,
+            disabled && questionControlStyles.buttonDisabled
+          ]}
           disabled={disabled}
           onPress={async () => {
             setRecordingError(undefined);
@@ -501,6 +531,7 @@ export function createWhoVaQuestionControls(primitives: WhoVaQuestionControlPrim
     data,
     platform,
     messages = ENGLISH_UI_MESSAGES,
+    issues,
     onAnswer
   }: WhoVaQuestionControlProps) {
     const attachment = attachmentDetails(value);
@@ -604,9 +635,11 @@ export function createWhoVaQuestionControls(primitives: WhoVaQuestionControlPrim
         <View style={questionControlStyles.actions}>
           <Pressable
             accessibilityRole="button"
+            aria-invalid={issues.length > 0 || undefined}
             disabled={!services?.captureImage || busy != null}
             style={[
               questionControlStyles.button,
+              issues.length > 0 && questionControlStyles.buttonError,
               (!services?.captureImage || busy != null) && questionControlStyles.buttonDisabled
             ]}
             onPress={() => void choose("camera")}
@@ -617,10 +650,12 @@ export function createWhoVaQuestionControls(primitives: WhoVaQuestionControlPrim
           </Pressable>
           <Pressable
             accessibilityRole="button"
+            aria-invalid={issues.length > 0 || undefined}
             disabled={!services?.selectImage || busy != null}
             style={[
               questionControlStyles.button,
               questionControlStyles.buttonSecondary,
+              issues.length > 0 && questionControlStyles.buttonSecondaryError,
               (!services?.selectImage || busy != null) && questionControlStyles.buttonDisabled
             ]}
             onPress={() => void choose("library")}
@@ -696,6 +731,7 @@ export function createWhoVaQuestionControls(primitives: WhoVaQuestionControlPrim
     data,
     platform,
     messages = ENGLISH_UI_MESSAGES,
+    issues,
     onAnswer
   }: WhoVaQuestionControlProps) {
     const [busy, setBusy] = useState(false);
@@ -720,9 +756,11 @@ export function createWhoVaQuestionControls(primitives: WhoVaQuestionControlPrim
           <Pressable
             accessibilityRole="button"
             testID={`question-${question.name}`}
+            aria-invalid={issues.length > 0 || undefined}
             disabled={!services?.selectFile || busy}
             style={[
               questionControlStyles.button,
+              issues.length > 0 && questionControlStyles.buttonError,
               (!services?.selectFile || busy) && questionControlStyles.buttonDisabled
             ]}
             onPress={async () => {

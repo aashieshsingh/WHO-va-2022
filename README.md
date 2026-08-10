@@ -9,6 +9,7 @@ The runtime, package build, and test suite do **not** parse Excel or generate fr
 ## Documentation
 
 - [Developer guide](https://github.com/drguptavivek/WHO-va-2022/blob/main/docs/development.md) — setup, repository map, common workflows, testing, and contribution rules
+- [Project workflow](https://github.com/drguptavivek/WHO-va-2022/blob/main/docs/workflow.md) - runtime, interview, development, CI, and release flow diagrams
 - [API reference](https://github.com/drguptavivek/WHO-va-2022/blob/main/docs/api.md) — entry points and the main headless, form, draft, localization, and attachment APIs
 - [Form schema and WHO differences](https://github.com/drguptavivek/WHO-va-2022/blob/main/docs/form-schema.md) — canonical answer types, identifiers, implementation additions, and every intentional change from the WHO 2022 reference
 - [Architecture](https://github.com/drguptavivek/WHO-va-2022/blob/main/docs/architecture.md) — executable contract, runtime boundaries, shared behavior, and platform services
