@@ -30,6 +30,30 @@ function sendJson(response, statusCode, body) {
   response.end(JSON.stringify(body));
 }
 
+const characterOnlyCaseEntryFields = {
+  district: "District",
+  block: "Block",
+  villages: "Villages",
+  phc: "Phc",
+  subcentre: "Subcentre",
+  householdHeadName: "Name of head of the Household",
+  deceasedFullName: "Full name of the deceased"
+};
+
+const characterOnlyPattern = /^[A-Za-z]+(?: [A-Za-z]+)*$/;
+
+function validateCaseEntry(caseEntry) {
+  for (const [field, label] of Object.entries(characterOnlyCaseEntryFields)) {
+    const value = typeof caseEntry[field] === "string" ? caseEntry[field].trim() : "";
+    caseEntry[field] = value;
+    if (!characterOnlyPattern.test(value)) {
+      const error = new Error(`${label} accepts letters only. Spaces are allowed between words.`);
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+}
+
 async function saveFormEntry(payload) {
   const uid = typeof payload.uid === "string" ? payload.uid.trim() : "";
   if (!uid) {
@@ -40,6 +64,7 @@ async function saveFormEntry(payload) {
 
   const status = payload.status === "completed" ? "completed" : "case-entry";
   const caseEntry = payload.caseEntry && typeof payload.caseEntry === "object" ? payload.caseEntry : {};
+  validateCaseEntry(caseEntry);
   const whoVaData = payload.whoVaData && typeof payload.whoVaData === "object" ? payload.whoVaData : {};
   const submission = payload.submission && typeof payload.submission === "object" ? payload.submission : null;
   const validationIssues = Array.isArray(payload.validationIssues) ? payload.validationIssues : [];

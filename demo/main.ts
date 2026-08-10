@@ -346,6 +346,7 @@ entryForm?.addEventListener("submit", (event) => {
       });
 
       rememberCaseEntry(entry, whoVaData);
+      window.alert("Case data entry submitted successfully.");
       renderDeceasedDropdown();
       if (deceasedEntrySelect) deceasedEntrySelect.value = entry.uid;
       pickerStatusMessage = `Entry saved successfully for ${entry.deceasedFullName}.`;

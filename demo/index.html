@@ -69,23 +69,54 @@
           <div class="entry-grid">
             <label>
               <span>District</span>
-              <input name="district" type="text" autocomplete="address-level2" required />
+              <input
+                name="district"
+                type="text"
+                autocomplete="address-level2"
+                pattern="[A-Za-z]+(?: [A-Za-z]+)*"
+                title="Use letters only. Spaces are allowed between words."
+                required
+              />
             </label>
             <label>
               <span>Block</span>
-              <input name="block" type="text" required />
+              <input
+                name="block"
+                type="text"
+                pattern="[A-Za-z]+(?: [A-Za-z]+)*"
+                title="Use letters only. Spaces are allowed between words."
+                required
+              />
             </label>
             <label>
               <span>Villages</span>
-              <input name="villages" type="text" required />
+              <input
+                name="villages"
+                type="text"
+                pattern="[A-Za-z]+(?: [A-Za-z]+)*"
+                title="Use letters only. Spaces are allowed between words."
+                required
+              />
             </label>
             <label>
               <span>Phc</span>
-              <input name="phc" type="text" required />
+              <input
+                name="phc"
+                type="text"
+                pattern="[A-Za-z]+(?: [A-Za-z]+)*"
+                title="Use letters only. Spaces are allowed between words."
+                required
+              />
             </label>
             <label>
               <span>Subcentre</span>
-              <input name="subcentre" type="text" required />
+              <input
+                name="subcentre"
+                type="text"
+                pattern="[A-Za-z]+(?: [A-Za-z]+)*"
+                title="Use letters only. Spaces are allowed between words."
+                required
+              />
             </label>
             <label>
               <span>Date</span>
@@ -93,11 +124,23 @@
             </label>
             <label>
               <span>Name of head of the Household</span>
-              <input name="householdHeadName" type="text" required />
+              <input
+                name="householdHeadName"
+                type="text"
+                pattern="[A-Za-z]+(?: [A-Za-z]+)*"
+                title="Use letters only. Spaces are allowed between words."
+                required
+              />
             </label>
             <label>
               <span>Full name of the deceased</span>
-              <input name="deceasedFullName" type="text" required />
+              <input
+                name="deceasedFullName"
+                type="text"
+                pattern="[A-Za-z]+(?: [A-Za-z]+)*"
+                title="Use letters only. Spaces are allowed between words."
+                required
+              />
             </label>
             <label class="entry-grid__wide">
               <span>House address of the deceased</span>
