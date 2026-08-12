@@ -1,3 +1,4 @@
+import { randomBytes, scryptSync } from "node:crypto";
 import { createServer as createHttpServer } from "node:http";
 
 import { createServer as createViteServer } from "vite";
@@ -30,6 +31,109 @@ function sendJson(response, statusCode, body) {
   response.end(JSON.stringify(body));
 }
 
+const partnerSites = new Set(["AIIMS", "ICMR", "WHO Collaborating Centre"]);
+const assignedSites = new Set(["Bhopal", "Delhi", "Mumbai", "Pune"]);
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
+
+function generatedUserId(name) {
+  const initials = name
+    .split(/\s+/u)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "U")
+    .join("")
+    .padEnd(2, "U");
+  return `USR-${initials}-${Date.now().toString(36).toUpperCase()}-${randomBytes(3).toString("hex").toUpperCase()}`;
+}
+
+function hashPassword(password) {
+  const salt = randomBytes(16).toString("hex");
+  const hash = scryptSync(password, salt, 64).toString("hex");
+  return `scrypt:${salt}:${hash}`;
+}
+
+function badRequest(message) {
+  const error = new Error(message);
+  error.statusCode = 400;
+  return error;
+}
+
+function validateUserRegistration(payload) {
+  const name = typeof payload.name === "string" ? payload.name.trim() : "";
+  const email = typeof payload.email === "string" ? payload.email.trim().toLowerCase() : "";
+  const partnerSite = typeof payload.partnerSite === "string" ? payload.partnerSite.trim() : "";
+  const siteAssigned = typeof payload.siteAssigned === "string" ? payload.siteAssigned.trim() : "";
+  const password = typeof payload.password === "string" ? payload.password : "";
+
+  if (!characterOnlyPattern.test(name))
+    throw badRequest("Name accepts letters only. Spaces are allowed between words.");
+  if (!emailPattern.test(email)) throw badRequest("A valid email is required");
+  if (!partnerSites.has(partnerSite)) throw badRequest("Select a valid partner site");
+  if (!assignedSites.has(siteAssigned)) throw badRequest("Select a valid assigned site");
+  if (password.length < 8) throw badRequest("Password must be at least 8 characters");
+
+  return { name, email, partnerSite, siteAssigned, password };
+}
+
+async function ensureUsersTable() {
+  await pool.query(`
+    create table if not exists who_va_users (
+      user_id text primary key,
+      name text not null,
+      email text not null unique,
+      partner_site text not null,
+      site_assigned text not null,
+      password_hash text not null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    )
+  `);
+  await pool.query("create index if not exists who_va_users_partner_site_idx on who_va_users (partner_site)");
+  await pool.query(
+    "create index if not exists who_va_users_site_assigned_idx on who_va_users (site_assigned)"
+  );
+}
+
+async function registerUser(payload) {
+  await ensureUsersTable();
+  const user = validateUserRegistration(payload);
+  try {
+    const result = await pool.query(
+      `
+        insert into who_va_users (
+          user_id,
+          name,
+          email,
+          partner_site,
+          site_assigned,
+          password_hash
+        )
+        values ($1, $2, $3, $4, $5, $6)
+        returning user_id, name, email, partner_site, site_assigned, created_at
+      `,
+      [
+        generatedUserId(user.name),
+        user.name,
+        user.email,
+        user.partnerSite,
+        user.siteAssigned,
+        hashPassword(user.password)
+      ]
+    );
+    const saved = result.rows[0];
+    return {
+      userId: saved.user_id,
+      name: saved.name,
+      email: saved.email,
+      partnerSite: saved.partner_site,
+      siteAssigned: saved.site_assigned,
+      createdAt: saved.created_at
+    };
+  } catch (error) {
+    if (error?.code === "23505") throw badRequest("A user with this email is already registered");
+    throw error;
+  }
+}
 const characterOnlyCaseEntryFields = {
   district: "District",
   block: "Block",
@@ -198,6 +302,12 @@ const server = createHttpServer(async (request, response) => {
     if (url.pathname === "/api/form-entries" && request.method === "POST") {
       const saved = await saveFormEntry(await readJsonBody(request));
       sendJson(response, 200, { ok: true, saved });
+      return;
+    }
+
+    if (url.pathname === "/api/users" && request.method === "POST") {
+      const user = await registerUser(await readJsonBody(request));
+      sendJson(response, 200, { ok: true, user });
       return;
     }
 

@@ -13,6 +13,7 @@
         <h1>WHO 2022 Verbal Autopsy</h1>
       </div>
       <div class="header-actions">
+        <button id="show-registration" type="button">Register user</button>
         <button id="new-case-entry" type="button">Case data entry</button>
         <button id="header-start-selected-entry" class="start-selected-entry" type="button" disabled>
           Fill WHO VA 2022 Instrument
@@ -25,6 +26,74 @@
     </header>
 
     <main>
+      <section id="registration-shell" class="entry-shell" aria-labelledby="registration-title">
+        <form id="registration-form" class="entry-form">
+          <div class="entry-form__header">
+            <div>
+              <h2 id="registration-title">User registration</h2>
+              <p>Create interviewer access before case data entry.</p>
+            </div>
+            <label>
+              <span>User ID</span>
+              <input id="generated-user-id" type="text" readonly placeholder="Generated after save" />
+            </label>
+          </div>
+
+          <div class="entry-grid">
+            <label>
+              <span>Name</span>
+              <input
+                name="name"
+                type="text"
+                autocomplete="name"
+                pattern="[A-Za-z]+(?: [A-Za-z]+)*"
+                title="Use letters only. Spaces are allowed between words."
+                required
+              />
+            </label>
+            <label>
+              <span>Email</span>
+              <input name="email" type="email" autocomplete="email" required />
+            </label>
+            <label>
+              <span>Partner site</span>
+              <select name="partnerSite" required>
+                <option value="">Select partner site</option>
+                <option value="AIIMS">AIIMS</option>
+                <option value="ICMR">ICMR</option>
+                <option value="WHO Collaborating Centre">WHO Collaborating Centre</option>
+              </select>
+            </label>
+            <label>
+              <span>Site assigned</span>
+              <select name="siteAssigned" required>
+                <option value="">Select assigned site</option>
+                <option value="Bhopal">Bhopal</option>
+                <option value="Delhi">Delhi</option>
+                <option value="Mumbai">Mumbai</option>
+                <option value="Pune">Pune</option>
+              </select>
+            </label>
+            <label class="entry-grid__wide">
+              <span>Password</span>
+              <input
+                name="password"
+                type="password"
+                autocomplete="new-password"
+                minlength="8"
+                title="Use at least 8 characters."
+                required
+              />
+            </label>
+          </div>
+
+          <div class="entry-actions">
+            <button id="clear-registration" type="button">Clear</button>
+            <button type="submit">Register</button>
+          </div>
+        </form>
+        <output id="registration-output" class="entry-output" hidden></output>
+      </section>
       <section id="case-picker-shell" class="entry-shell" aria-labelledby="case-picker-title">
         <div class="entry-form">
           <div class="entry-form__header">

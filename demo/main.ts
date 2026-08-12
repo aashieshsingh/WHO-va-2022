@@ -23,6 +23,23 @@ interface CaseEntryData {
   ageAtDeath: number;
 }
 
+interface RegisteredUser {
+  userId: string;
+  name: string;
+  email: string;
+  partnerSite: string;
+  siteAssigned: string;
+  createdAt: string;
+}
+
+interface RegisterUserPayload {
+  name: string;
+  email: string;
+  partnerSite: string;
+  siteAssigned: string;
+  password: string;
+}
+
 interface SavedFormEntry {
   id: number;
   uid: string;
@@ -73,6 +90,12 @@ language?.addEventListener("change", () => {
   document.documentElement.lang = language.value;
 });
 
+const registrationShell = document.querySelector<HTMLElement>("#registration-shell");
+const registrationForm = document.querySelector<HTMLFormElement>("#registration-form");
+const registrationOutput = document.querySelector<HTMLOutputElement>("#registration-output");
+const generatedUserIdInput = document.querySelector<HTMLInputElement>("#generated-user-id");
+const showRegistration = document.querySelector<HTMLButtonElement>("#show-registration");
+const clearRegistration = document.querySelector<HTMLButtonElement>("#clear-registration");
 const casePickerShell = document.querySelector<HTMLElement>("#case-picker-shell");
 const deceasedEntrySelect = document.querySelector<HTMLSelectElement>("#deceased-entry-select");
 const selectedEntryOutput = document.querySelector<HTMLOutputElement>("#selected-entry-output");
@@ -97,7 +120,8 @@ const createEntryUid = () => {
   return `VA-${Date.now().toString(36).toUpperCase()}-${randomPart.toUpperCase()}`;
 };
 
-const setVisibleStep = (step: "picker" | "entry" | "instrument") => {
+const setVisibleStep = (step: "registration" | "picker" | "entry" | "instrument") => {
+  if (registrationShell) registrationShell.hidden = step !== "registration";
   if (casePickerShell) casePickerShell.hidden = step !== "picker";
   if (entryShell) entryShell.hidden = step !== "entry";
   if (whoVaShell) whoVaShell.hidden = step !== "instrument";
@@ -263,6 +287,50 @@ const showEntryOutput = (value: unknown) => {
   output.hidden = false;
   output.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
 };
+const showRegistrationOutput = (value: unknown) => {
+  if (!registrationOutput) return;
+  registrationOutput.hidden = false;
+  registrationOutput.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+};
+
+const usersApiUrl = () => "/api/users";
+
+const readRegistrationData = (sourceForm: HTMLFormElement): RegisterUserPayload => {
+  const formData = new FormData(sourceForm);
+  return {
+    name: String(formData.get("name") ?? "").trim(),
+    email: String(formData.get("email") ?? "")
+      .trim()
+      .toLowerCase(),
+    partnerSite: String(formData.get("partnerSite") ?? "").trim(),
+    siteAssigned: String(formData.get("siteAssigned") ?? "").trim(),
+    password: String(formData.get("password") ?? "")
+  };
+};
+
+const validateRegistrationData = (data: RegisterUserPayload): string | undefined => {
+  if (!/^[A-Za-z]+(?: [A-Za-z]+)*$/u.test(data.name)) {
+    return "Name accepts letters only. Spaces are allowed between words.";
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(data.email)) return "Enter a valid email address.";
+  if (!data.partnerSite) return "Select a partner site.";
+  if (!data.siteAssigned) return "Select an assigned site.";
+  if (data.password.length < 8) return "Password must be at least 8 characters.";
+  return undefined;
+};
+
+const registerUser = async (payload: RegisterUserPayload): Promise<RegisteredUser> => {
+  const response = await fetch(usersApiUrl(), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const body = await readJsonResponse<{ ok: boolean; user?: RegisteredUser; error?: string }>(response);
+  if (!response.ok || !body.ok || !body.user) {
+    throw new Error(body.error ?? `User could not be registered. Status: ${response.status}.`);
+  }
+  return body.user;
+};
 
 const applyCaseEntryToInstrument = async (caseEntry: CaseEntryData, whoVaData: Record<string, unknown>) => {
   currentCaseEntry = caseEntry;
@@ -370,6 +438,54 @@ const saveFormEntry = async (payload: SaveFormEntryPayload): Promise<SavedFormEn
   return body.saved;
 };
 
+showRegistration?.addEventListener("click", () => {
+  setVisibleStep("registration");
+  registrationShell?.scrollIntoView({ block: "start" });
+});
+
+clearRegistration?.addEventListener("click", () => {
+  registrationForm?.reset();
+  if (generatedUserIdInput) generatedUserIdInput.value = "";
+  if (registrationOutput) {
+    registrationOutput.hidden = true;
+    registrationOutput.textContent = "";
+  }
+});
+
+registrationForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void (async () => {
+    const submitButton = registrationForm.querySelector<HTMLButtonElement>('button[type="submit"]');
+    submitButton?.setAttribute("disabled", "true");
+    showRegistrationOutput("Registering user...");
+
+    try {
+      const registrationData = readRegistrationData(registrationForm);
+      const validationError = validateRegistrationData(registrationData);
+      if (validationError) {
+        showRegistrationOutput(validationError);
+        return;
+      }
+      const user = await registerUser(registrationData);
+      if (generatedUserIdInput) generatedUserIdInput.value = user.userId;
+      showRegistrationOutput(
+        [
+          "Registration successful",
+          `User ID: ${user.userId}`,
+          `Name: ${user.name}`,
+          `Email: ${user.email}`,
+          `Partner site: ${user.partnerSite}`,
+          `Site assigned: ${user.siteAssigned}`
+        ].join("\n")
+      );
+      window.alert(`Registration successful. User ID: ${user.userId}`);
+    } catch (error) {
+      showRegistrationOutput(error instanceof Error ? error.message : String(error));
+    } finally {
+      submitButton?.removeAttribute("disabled");
+    }
+  })();
+});
 deceasedEntrySelect?.addEventListener("change", () => {
   pickerStatusMessage = undefined;
   renderSelectedEntrySummary();
@@ -471,4 +587,4 @@ form?.addEventListener("who-va-complete", (event) => {
 
 setDefaultEntryValues();
 renderDeceasedDropdown();
-setVisibleStep("picker");
+setVisibleStep("registration");
