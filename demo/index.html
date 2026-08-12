@@ -13,6 +13,7 @@
         <h1>WHO 2022 Verbal Autopsy</h1>
       </div>
       <div class="header-actions">
+        <button id="show-login" type="button">Login</button>
         <button id="show-registration" type="button">Register user</button>
         <button id="new-case-entry" type="button">Case data entry</button>
         <button id="header-start-selected-entry" class="start-selected-entry" type="button" disabled>
@@ -26,6 +27,47 @@
     </header>
 
     <main>
+      <section id="login-shell" class="entry-shell" aria-labelledby="login-title">
+        <form id="login-form" class="entry-form">
+          <div class="entry-form__header">
+            <div>
+              <h2 id="login-title">User login</h2>
+              <p>Sign in to open the page assigned to your role.</p>
+            </div>
+          </div>
+
+          <div class="entry-grid">
+            <label>
+              <span>Email</span>
+              <input name="email" type="email" autocomplete="email" required />
+            </label>
+            <label>
+              <span>Password</span>
+              <input name="password" type="password" autocomplete="current-password" required />
+            </label>
+          </div>
+
+          <div class="entry-actions">
+            <button type="submit">Login</button>
+          </div>
+        </form>
+        <output id="login-output" class="entry-output" hidden></output>
+      </section>
+
+      <section id="admin-shell" class="entry-shell" aria-labelledby="admin-title" hidden>
+        <div class="entry-form">
+          <div class="entry-form__header">
+            <div>
+              <h2 id="admin-title">Admin dashboard</h2>
+              <p id="admin-summary">Signed in as admin.</p>
+            </div>
+          </div>
+          <div class="entry-actions">
+            <button id="admin-register-user" type="button">Register another user</button>
+            <button id="admin-open-data-entry" type="button">Open data entry</button>
+          </div>
+        </div>
+      </section>
       <section id="registration-shell" class="entry-shell" aria-labelledby="registration-title">
         <form id="registration-form" class="entry-form">
           <div class="entry-form__header">
@@ -54,6 +96,14 @@
             <label>
               <span>Email</span>
               <input name="email" type="email" autocomplete="email" required />
+            </label>
+            <label>
+              <span>Role</span>
+              <select name="role" required>
+                <option value="">Select role</option>
+                <option value="admin">Admin</option>
+                <option value="data-entry">Data entry</option>
+              </select>
             </label>
             <label>
               <span>Partner site</span>

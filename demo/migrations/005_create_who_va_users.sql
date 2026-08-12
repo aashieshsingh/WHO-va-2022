@@ -11,3 +11,4 @@ create table if not exists who_va_users (
 
 create index if not exists who_va_users_partner_site_idx on who_va_users (partner_site);
 create index if not exists who_va_users_site_assigned_idx on who_va_users (site_assigned);
+create index if not exists who_va_users_role_idx on who_va_users (role);

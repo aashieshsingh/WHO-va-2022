@@ -40,6 +40,11 @@ interface RegisterUserPayload {
   password: string;
 }
 
+interface LoginPayload {
+  email: string;
+  password: string;
+}
+
 interface SavedFormEntry {
   id: number;
   uid: string;
@@ -90,10 +95,18 @@ language?.addEventListener("change", () => {
   document.documentElement.lang = language.value;
 });
 
+const loginShell = document.querySelector<HTMLElement>("#login-shell");
+const loginForm = document.querySelector<HTMLFormElement>("#login-form");
+const loginOutput = document.querySelector<HTMLOutputElement>("#login-output");
+const adminShell = document.querySelector<HTMLElement>("#admin-shell");
+const adminSummary = document.querySelector<HTMLElement>("#admin-summary");
+const adminRegisterUser = document.querySelector<HTMLButtonElement>("#admin-register-user");
+const adminOpenDataEntry = document.querySelector<HTMLButtonElement>("#admin-open-data-entry");
 const registrationShell = document.querySelector<HTMLElement>("#registration-shell");
 const registrationForm = document.querySelector<HTMLFormElement>("#registration-form");
 const registrationOutput = document.querySelector<HTMLOutputElement>("#registration-output");
 const generatedUserIdInput = document.querySelector<HTMLInputElement>("#generated-user-id");
+const showLogin = document.querySelector<HTMLButtonElement>("#show-login");
 const showRegistration = document.querySelector<HTMLButtonElement>("#show-registration");
 const clearRegistration = document.querySelector<HTMLButtonElement>("#clear-registration");
 const casePickerShell = document.querySelector<HTMLElement>("#case-picker-shell");
@@ -120,8 +133,10 @@ const createEntryUid = () => {
   return `VA-${Date.now().toString(36).toUpperCase()}-${randomPart.toUpperCase()}`;
 };
 
-const setVisibleStep = (step: "registration" | "picker" | "entry" | "instrument") => {
+const setVisibleStep = (step: "login" | "registration" | "admin" | "picker" | "entry" | "instrument") => {
+  if (loginShell) loginShell.hidden = step !== "login";
   if (registrationShell) registrationShell.hidden = step !== "registration";
+  if (adminShell) adminShell.hidden = step !== "admin";
   if (casePickerShell) casePickerShell.hidden = step !== "picker";
   if (entryShell) entryShell.hidden = step !== "entry";
   if (whoVaShell) whoVaShell.hidden = step !== "instrument";
@@ -331,6 +346,48 @@ const registerUser = async (payload: RegisterUserPayload): Promise<RegisteredUse
   }
   return body.user;
 };
+const readLoginData = (sourceForm: HTMLFormElement): LoginPayload => {
+  const formData = new FormData(sourceForm);
+  return {
+    email: String(formData.get("email") ?? "")
+      .trim()
+      .toLowerCase(),
+    password: String(formData.get("password") ?? "")
+  };
+};
+
+const loginUser = async (payload: LoginPayload): Promise<RegisteredUser> => {
+  const response = await fetch("/api/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const body = await readJsonResponse<{ ok: boolean; user?: RegisteredUser; error?: string }>(response);
+  if (!response.ok || !body.ok || !body.user) {
+    throw new Error(body.error ?? `Login failed. Status: ${response.status}.`);
+  }
+  return body.user;
+};
+
+const showLoginOutput = (value: unknown) => {
+  if (!loginOutput) return;
+  loginOutput.hidden = false;
+  loginOutput.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+};
+
+const showRolePage = (user: RegisteredUser) => {
+  if (user.role === "admin") {
+    if (adminSummary) {
+      adminSummary.textContent = `Signed in as ${user.name} (${user.email}). Role: Admin.`;
+    }
+    setVisibleStep("admin");
+    adminShell?.scrollIntoView({ block: "start" });
+    return;
+  }
+  renderDeceasedDropdown();
+  setVisibleStep("picker");
+  casePickerShell?.scrollIntoView({ block: "start" });
+};
 
 const applyCaseEntryToInstrument = async (caseEntry: CaseEntryData, whoVaData: Record<string, unknown>) => {
   currentCaseEntry = caseEntry;
@@ -438,6 +495,39 @@ const saveFormEntry = async (payload: SaveFormEntryPayload): Promise<SavedFormEn
   return body.saved;
 };
 
+showLogin?.addEventListener("click", () => {
+  setVisibleStep("login");
+  loginShell?.scrollIntoView({ block: "start" });
+});
+
+adminRegisterUser?.addEventListener("click", () => {
+  setVisibleStep("registration");
+  registrationShell?.scrollIntoView({ block: "start" });
+});
+
+adminOpenDataEntry?.addEventListener("click", () => {
+  renderDeceasedDropdown();
+  setVisibleStep("picker");
+  casePickerShell?.scrollIntoView({ block: "start" });
+});
+
+loginForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void (async () => {
+    const submitButton = loginForm.querySelector<HTMLButtonElement>('button[type="submit"]');
+    submitButton?.setAttribute("disabled", "true");
+    showLoginOutput("Signing in...");
+    try {
+      const user = await loginUser(readLoginData(loginForm));
+      showLoginOutput(`Login successful. Role: ${user.role === "admin" ? "Admin" : "Data entry"}`);
+      showRolePage(user);
+    } catch (error) {
+      showLoginOutput(error instanceof Error ? error.message : String(error));
+    } finally {
+      submitButton?.removeAttribute("disabled");
+    }
+  })();
+});
 showRegistration?.addEventListener("click", () => {
   setVisibleStep("registration");
   registrationShell?.scrollIntoView({ block: "start" });
@@ -587,4 +677,4 @@ form?.addEventListener("who-va-complete", (event) => {
 
 setDefaultEntryValues();
 renderDeceasedDropdown();
-setVisibleStep("registration");
+setVisibleStep("login");

@@ -1,4 +1,4 @@
-import { randomBytes, scryptSync } from "node:crypto";
+import { randomBytes, timingSafeEqual, scryptSync } from "node:crypto";
 import { createServer as createHttpServer } from "node:http";
 
 import { createServer as createViteServer } from "vite";
@@ -33,6 +33,7 @@ function sendJson(response, statusCode, body) {
 
 const partnerSites = new Set(["AIIMS", "ICMR", "WHO Collaborating Centre"]);
 const assignedSites = new Set(["Bhopal", "Delhi", "Mumbai", "Pune"]);
+const userRoles = new Set(["admin", "data-entry"]);
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
 
 function generatedUserId(name) {
@@ -52,6 +53,14 @@ function hashPassword(password) {
   return `scrypt:${salt}:${hash}`;
 }
 
+function verifyPassword(password, storedHash) {
+  const [scheme, salt, hash] = String(storedHash).split(":");
+  if (scheme !== "scrypt" || !salt || !hash) return false;
+  const expected = Buffer.from(hash, "hex");
+  const actual = scryptSync(password, salt, expected.length);
+  return expected.length === actual.length && timingSafeEqual(expected, actual);
+}
+
 function badRequest(message) {
   const error = new Error(message);
   error.statusCode = 400;
@@ -61,6 +70,7 @@ function badRequest(message) {
 function validateUserRegistration(payload) {
   const name = typeof payload.name === "string" ? payload.name.trim() : "";
   const email = typeof payload.email === "string" ? payload.email.trim().toLowerCase() : "";
+  const role = typeof payload.role === "string" ? payload.role.trim() : "";
   const partnerSite = typeof payload.partnerSite === "string" ? payload.partnerSite.trim() : "";
   const siteAssigned = typeof payload.siteAssigned === "string" ? payload.siteAssigned.trim() : "";
   const password = typeof payload.password === "string" ? payload.password : "";
@@ -68,11 +78,12 @@ function validateUserRegistration(payload) {
   if (!characterOnlyPattern.test(name))
     throw badRequest("Name accepts letters only. Spaces are allowed between words.");
   if (!emailPattern.test(email)) throw badRequest("A valid email is required");
+  if (!userRoles.has(role)) throw badRequest("Select a valid role");
   if (!partnerSites.has(partnerSite)) throw badRequest("Select a valid partner site");
   if (!assignedSites.has(siteAssigned)) throw badRequest("Select a valid assigned site");
   if (password.length < 8) throw badRequest("Password must be at least 8 characters");
 
-  return { name, email, partnerSite, siteAssigned, password };
+  return { name, email, role, partnerSite, siteAssigned, password };
 }
 
 async function ensureUsersTable() {
@@ -88,10 +99,14 @@ async function ensureUsersTable() {
       updated_at timestamptz not null default now()
     )
   `);
+  await pool.query(
+    "alter table who_va_users add column if not exists role text not null default 'data-entry'"
+  );
   await pool.query("create index if not exists who_va_users_partner_site_idx on who_va_users (partner_site)");
   await pool.query(
     "create index if not exists who_va_users_site_assigned_idx on who_va_users (site_assigned)"
   );
+  await pool.query("create index if not exists who_va_users_role_idx on who_va_users (role)");
 }
 
 async function registerUser(payload) {
@@ -104,17 +119,19 @@ async function registerUser(payload) {
           user_id,
           name,
           email,
+          role,
           partner_site,
           site_assigned,
           password_hash
         )
-        values ($1, $2, $3, $4, $5, $6)
-        returning user_id, name, email, partner_site, site_assigned, created_at
+        values ($1, $2, $3, $4, $5, $6, $7)
+        returning user_id, name, email, role, partner_site, site_assigned, created_at
       `,
       [
         generatedUserId(user.name),
         user.name,
         user.email,
+        user.role,
         user.partnerSite,
         user.siteAssigned,
         hashPassword(user.password)
@@ -125,6 +142,7 @@ async function registerUser(payload) {
       userId: saved.user_id,
       name: saved.name,
       email: saved.email,
+      role: saved.role,
       partnerSite: saved.partner_site,
       siteAssigned: saved.site_assigned,
       createdAt: saved.created_at
@@ -133,6 +151,33 @@ async function registerUser(payload) {
     if (error?.code === "23505") throw badRequest("A user with this email is already registered");
     throw error;
   }
+}
+async function loginUser(payload) {
+  await ensureUsersTable();
+  const email = typeof payload.email === "string" ? payload.email.trim().toLowerCase() : "";
+  const role = typeof payload.role === "string" ? payload.role.trim() : "";
+  const password = typeof payload.password === "string" ? payload.password : "";
+  if (!emailPattern.test(email) || !password) throw badRequest("Invalid email or password");
+
+  const result = await pool.query(
+    `
+      select user_id, name, email, role, partner_site, site_assigned, password_hash, created_at
+      from who_va_users
+      where email = $1
+    `,
+    [email]
+  );
+  const saved = result.rows[0];
+  if (!saved || !verifyPassword(password, saved.password_hash)) throw badRequest("Invalid email or password");
+  return {
+    userId: saved.user_id,
+    name: saved.name,
+    email: saved.email,
+    role: saved.role,
+    partnerSite: saved.partner_site,
+    siteAssigned: saved.site_assigned,
+    createdAt: saved.created_at
+  };
 }
 const characterOnlyCaseEntryFields = {
   district: "District",
@@ -307,6 +352,12 @@ const server = createHttpServer(async (request, response) => {
 
     if (url.pathname === "/api/users" && request.method === "POST") {
       const user = await registerUser(await readJsonBody(request));
+      sendJson(response, 200, { ok: true, user });
+      return;
+    }
+
+    if (url.pathname === "/api/login" && request.method === "POST") {
+      const user = await loginUser(await readJsonBody(request));
       sendJson(response, 200, { ok: true, user });
       return;
     }
