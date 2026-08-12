@@ -5,6 +5,7 @@ import {
 } from "../src/web-component.js";
 import { WHO_VA_2022_LANGUAGES } from "../src/instrument-loader.js";
 import { createWhoVaInitialDataFromPrefill } from "../src/prefill.js";
+import type { WhoVaDraft, WhoVaDraftStore } from "../src/types.js";
 
 interface CaseEntryData {
   district: string;
@@ -56,7 +57,6 @@ const language = document.querySelector<HTMLSelectElement>("#language");
 
 if (form) {
   const insecureDemoDefaults = createInsecureWhoVaBrowserDefaults();
-  form.draftStore = insecureDemoDefaults.draftStore;
   form.platform = insecureDemoDefaults.platform;
 }
 
@@ -262,22 +262,85 @@ const showEntryOutput = (value: unknown) => {
   entryOutput.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
 };
 
-const applyCaseEntryToInstrument = (caseEntry: CaseEntryData, whoVaData: Record<string, unknown>) => {
+const applyCaseEntryToInstrument = async (caseEntry: CaseEntryData, whoVaData: Record<string, unknown>) => {
   currentCaseEntry = caseEntry;
   currentWhoVaData = whoVaData;
   form?.setAttribute("draft-id", caseEntry.uid);
   form?.setData(whoVaData);
   setVisibleStep("instrument");
   whoVaShell?.scrollIntoView({ block: "start" });
+
+  try {
+    const savedDraft = await dbDraftStore.load(caseEntry.uid);
+    if (savedDraft) form?.setData(savedDraft.data);
+  } catch (error) {
+    console.warn("Could not load saved WHO VA draft", error);
+  }
 };
 
-const formEntriesApiUrl = () => {
-  const isLocalHost = window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost";
-  if (isLocalHost && window.location.port && window.location.port !== "5175") {
-    return "http://127.0.0.1:5175/api/form-entries";
-  }
-  return "/api/form-entries";
+const formEntriesApiUrl = () => "/api/form-entries";
+
+const draftsApiUrl = (id?: string) => {
+  const base = formEntriesApiUrl().replace(/\/form-entries$/u, "/drafts");
+  return id ? `${base}/${encodeURIComponent(id)}` : base;
 };
+
+const readJsonResponse = async <T extends { error?: string }>(response: Response): Promise<T> => {
+  const responseText = await response.text();
+  try {
+    const body = responseText ? (JSON.parse(responseText) as T) : ({} as T);
+    if (!response.ok && body.error) {
+      throw new Error(`${body.error} (HTTP ${response.status})`);
+    }
+    return body;
+  } catch (error) {
+    if (error instanceof Error && responseText && responseText.trim().startsWith("{")) throw error;
+    throw new Error(
+      `The save API returned a non-JSON response. Open the DB-backed demo server, not the plain Vite server. Status: ${response.status}. Response: ${responseText || "empty"}`
+    );
+  }
+};
+
+const dbDraftStore: WhoVaDraftStore = {
+  async save(draft) {
+    const response = await fetch(draftsApiUrl(), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ draft })
+    });
+    const body = await readJsonResponse<{ ok: boolean; error?: string }>(response);
+    if (!response.ok || !body.ok) {
+      throw new Error(body.error ?? `Draft could not be saved. Status: ${response.status}.`);
+    }
+  },
+  async load(id) {
+    const response = await fetch(draftsApiUrl(id));
+    if (response.status === 404) return undefined;
+    const body = await readJsonResponse<{ ok: boolean; draft?: WhoVaDraft; error?: string }>(response);
+    if (!response.ok || !body.ok) {
+      throw new Error(body.error ?? `Draft could not be loaded. Status: ${response.status}.`);
+    }
+    return body.draft;
+  },
+  async remove(id) {
+    const response = await fetch(draftsApiUrl(id), { method: "DELETE" });
+    const body = await readJsonResponse<{ ok: boolean; error?: string }>(response);
+    if (!response.ok || !body.ok) {
+      throw new Error(body.error ?? `Draft could not be removed. Status: ${response.status}.`);
+    }
+  }
+};
+if (form) form.draftStore = dbDraftStore;
+
+form?.addEventListener("who-va-draft-saved", (event) => {
+  const draft = (event as CustomEvent<WhoVaDraft>).detail;
+  showEntryOutput(`Draft saved to PostgreSQL: ${draft.id}`);
+});
+
+form?.addEventListener("who-va-draft-error", (event) => {
+  const error = (event as CustomEvent<Error>).detail;
+  showEntryOutput(error instanceof Error ? error.message : String(error));
+});
 
 const saveFormEntry = async (payload: SaveFormEntryPayload): Promise<SavedFormEntry> => {
   const response = await fetch(formEntriesApiUrl(), {
@@ -319,10 +382,14 @@ newCaseEntry?.addEventListener("click", () => {
 
 for (const button of startSelectedEntries) {
   button.addEventListener("click", () => {
-    const selected = selectedStoredCaseEntry();
-    if (!selected) return;
-    fillCaseEntryForm(selected.caseEntry);
-    applyCaseEntryToInstrument(selected.caseEntry, selected.whoVaData);
+    void (async () => {
+      const selected = selectedStoredCaseEntry();
+      if (!selected) return;
+      fillCaseEntryForm(selected.caseEntry);
+      await applyCaseEntryToInstrument(selected.caseEntry, selected.whoVaData);
+    })().catch((error: unknown) => {
+      showEntryOutput(error instanceof Error ? error.message : String(error));
+    });
   });
 }
 

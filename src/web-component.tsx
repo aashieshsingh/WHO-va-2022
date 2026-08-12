@@ -15,7 +15,7 @@ import { WhoVaForm } from "./web.js";
 
 export class WhoVaFormElement extends HTMLElement {
   static get observedAttributes() {
-    return ["locale", "show-guidance"];
+    return ["draft-id", "locale", "show-guidance"];
   }
 
   private root: Root | undefined;
@@ -98,6 +98,7 @@ export class WhoVaFormElement extends HTMLElement {
     this.root ??= createRoot(this);
     this.root.render(
       <WhoVaForm
+        key={this.getDraftId()}
         instrument={language.instrument}
         session={this.session}
         draftId={this.getDraftId()}

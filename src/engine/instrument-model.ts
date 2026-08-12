@@ -63,6 +63,37 @@ export function getCompiledExpressionAst(expression: SourceExpression): Expressi
   return compileExpression(expression, "Runtime");
 }
 
+function sameLocalizedText(
+  left: Record<string, string | undefined>,
+  right: Record<string, string | undefined>
+): boolean {
+  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+  for (const key of keys) {
+    if ((left[key] ?? undefined) !== (right[key] ?? undefined)) return false;
+  }
+  return true;
+}
+
+function validateQuestionValidationMetadata(question: InstrumentQuestion): void {
+  if (!question.validation) return;
+  if (question.validation.required !== question.required) {
+    throw new Error(`Question '${question.name}' validation.required must match required`);
+  }
+  if (question.validation.dataType !== question.dataType) {
+    throw new Error(`Question '${question.name}' validation.dataType must match dataType`);
+  }
+  const expectedChoiceValues = question.choices?.map((choice) => choice.value) ?? [];
+  const actualChoiceValues = question.validation.choiceValues ?? [];
+  if (JSON.stringify(actualChoiceValues) !== JSON.stringify(expectedChoiceValues)) {
+    throw new Error(`Question '${question.name}' validation.choiceValues must match choices`);
+  }
+  if ((question.validation.constraint?.source ?? undefined) !== (question.constraint?.source ?? undefined)) {
+    throw new Error(`Question '${question.name}' validation.constraint must match constraint`);
+  }
+  if (!sameLocalizedText(question.validation.constraintMessage, question.constraintMessage)) {
+    throw new Error(`Question '${question.name}' validation.constraintMessage must match constraintMessage`);
+  }
+}
 function validateQuestion(
   question: InstrumentQuestion,
   sectionNames: ReadonlySet<string>,
@@ -102,6 +133,9 @@ function validateQuestion(
   if (question.constraint) compileExpression(question.constraint, `Question '${question.name}' constraint`);
   if (question.calculation)
     compileExpression(question.calculation, `Question '${question.name}' calculation`);
+  if (question.validation?.constraint)
+    compileExpression(question.validation.constraint, `Question '${question.name}' validation constraint`);
+  validateQuestionValidationMetadata(question);
 }
 
 function validateSectionHierarchy(
@@ -141,6 +175,7 @@ function semanticSignature(instrument: InstrumentDefinition): string {
         hint: _hint,
         guidance: _guidance,
         constraintMessage: _constraintMessage,
+        validation: _validation,
         ...question
       }) => ({
         ...question,
@@ -187,6 +222,13 @@ function freezeInstrument(instrument: InstrumentDefinition): void {
     Object.freeze(question.hint);
     Object.freeze(question.guidance);
     Object.freeze(question.constraintMessage);
+    if (question.validation?.constraint?.ast) freezeExpressionNode(question.validation.constraint.ast);
+    if (question.validation?.constraint) Object.freeze(question.validation.constraint);
+    if (question.validation?.choiceValues) Object.freeze(question.validation.choiceValues);
+    if (question.validation) {
+      Object.freeze(question.validation.constraintMessage);
+      Object.freeze(question.validation);
+    }
     Object.freeze(question.sectionPath);
     Object.freeze(question);
   }

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import generatedInstrument from "../src/generated/who-va-2022.instrument.json";
+
 import {
   getQuestion,
   isQuestionRelevant,
@@ -10,6 +12,21 @@ import {
 } from "../src/index.js";
 
 describe("shared field and submission validation", () => {
+  it("exposes validation metadata on every generated WHO question", () => {
+    for (const question of generatedInstrument.questions) {
+      expect(question.validation).toBeDefined();
+      expect(question.validation).toMatchObject({
+        required: question.required,
+        dataType: question.dataType,
+        constraintMessage: question.constraintMessage
+      });
+      expect(question.validation.choiceValues ?? []).toEqual(
+        question.choices?.map((choice) => choice.value) ?? []
+      );
+      expect(question.validation.constraint?.source).toBe(question.constraint?.source);
+    }
+  });
+
   it("rejects an unlisted coded value at the field boundary", () => {
     const question = getQuestion(whoVa2022Instrument, "Id10010b");
     expect(validateAnswer(question, "unknown", {})).toEqual([

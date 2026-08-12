@@ -10,7 +10,7 @@ const pool = createPostgresPool();
 
 const corsHeaders = {
   "access-control-allow-origin": "*",
-  "access-control-allow-methods": "GET,POST,OPTIONS",
+  "access-control-allow-methods": "DELETE,GET,POST,OPTIONS",
   "access-control-allow-headers": "content-type"
 };
 
@@ -54,6 +54,73 @@ function validateCaseEntry(caseEntry) {
   }
 }
 
+async function ensureDraftTable() {
+  await pool.query(`
+    create table if not exists who_va_drafts (
+      id text primary key,
+      draft jsonb not null,
+      instrument_id text not null,
+      instrument_version text not null,
+      current_section text not null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    )
+  `);
+  await pool.query("create index if not exists who_va_drafts_updated_at_idx on who_va_drafts (updated_at)");
+}
+function validateDraft(draft) {
+  if (!draft || typeof draft !== "object" || Array.isArray(draft)) {
+    const error = new Error("draft must be an object");
+    error.statusCode = 400;
+    throw error;
+  }
+  for (const field of ["id", "instrumentId", "instrumentVersion", "currentSection"]) {
+    if (typeof draft[field] !== "string" || draft[field].trim() === "") {
+      const error = new Error(`draft.${field} is required`);
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+  return draft;
+}
+
+async function saveDraft(payload) {
+  await ensureDraftTable();
+  const draft = validateDraft(payload.draft ?? payload);
+  const result = await pool.query(
+    `
+      insert into who_va_drafts (
+        id,
+        draft,
+        instrument_id,
+        instrument_version,
+        current_section
+      )
+      values ($1, $2::jsonb, $3, $4, $5)
+      on conflict (id) do update set
+        draft = excluded.draft,
+        instrument_id = excluded.instrument_id,
+        instrument_version = excluded.instrument_version,
+        current_section = excluded.current_section,
+        updated_at = now()
+      returning id, instrument_id, instrument_version, current_section, created_at, updated_at
+    `,
+    [draft.id, JSON.stringify(draft), draft.instrumentId, draft.instrumentVersion, draft.currentSection]
+  );
+
+  return result.rows[0];
+}
+
+async function loadDraft(id) {
+  await ensureDraftTable();
+  const result = await pool.query("select draft from who_va_drafts where id = $1", [id]);
+  return result.rows[0]?.draft;
+}
+
+async function removeDraft(id) {
+  await ensureDraftTable();
+  await pool.query("delete from who_va_drafts where id = $1", [id]);
+}
 async function saveFormEntry(payload) {
   const uid = typeof payload.uid === "string" ? payload.uid.trim() : "";
   if (!uid) {
@@ -120,20 +187,47 @@ const server = createHttpServer(async (request, response) => {
       return;
     }
 
-    if (request.url === "/api/health" && request.method === "GET") {
+    const url = new URL(request.url ?? "/", "http://127.0.0.1");
+
+    if (url.pathname === "/api/health" && request.method === "GET") {
       await pool.query("select 1");
       sendJson(response, 200, { ok: true, database: process.env.PGDATABASE ?? "whova" });
       return;
     }
 
-    if (request.url === "/api/form-entries" && request.method === "POST") {
+    if (url.pathname === "/api/form-entries" && request.method === "POST") {
       const saved = await saveFormEntry(await readJsonBody(request));
       sendJson(response, 200, { ok: true, saved });
       return;
     }
 
+    if (url.pathname === "/api/drafts" && request.method === "POST") {
+      const saved = await saveDraft(await readJsonBody(request));
+      sendJson(response, 200, { ok: true, saved });
+      return;
+    }
+
+    if (url.pathname.startsWith("/api/drafts/") && request.method === "GET") {
+      const id = decodeURIComponent(url.pathname.slice("/api/drafts/".length));
+      const draft = await loadDraft(id);
+      if (!draft) {
+        sendJson(response, 404, { ok: false, error: "Draft not found" });
+        return;
+      }
+      sendJson(response, 200, { ok: true, draft });
+      return;
+    }
+
+    if (url.pathname.startsWith("/api/drafts/") && request.method === "DELETE") {
+      const id = decodeURIComponent(url.pathname.slice("/api/drafts/".length));
+      await removeDraft(id);
+      sendJson(response, 200, { ok: true });
+      return;
+    }
+
     vite.middlewares(request, response);
   } catch (error) {
+    console.error(error);
     const statusCode = Number(error?.statusCode ?? 500);
     sendJson(response, statusCode, {
       ok: false,

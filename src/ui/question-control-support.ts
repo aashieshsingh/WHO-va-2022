@@ -53,6 +53,14 @@ export const questionControlStyles = {
     { borderRadius: "controlRadius", backgroundColor: "brand" }
   ),
   buttonSecondary: withWebTheme({ backgroundColor: "#dce6e1" }, { backgroundColor: "border" }),
+  buttonError: withWebTheme(
+    { borderWidth: 1, borderColor: "#b34231", backgroundColor: "#b34231" },
+    { borderColor: "danger", backgroundColor: "danger" }
+  ),
+  buttonSecondaryError: withWebTheme(
+    { borderWidth: 1, borderColor: "#b34231", backgroundColor: "#fff8f6" },
+    { borderColor: "danger", backgroundColor: "dangerSoft" }
+  ),
   buttonDanger: withWebTheme({ backgroundColor: "#f3ded9" }, { backgroundColor: "dangerSoft" }),
   buttonDisabled: { opacity: 0.45 },
   buttonText: withWebTheme({ color: "#ffffff", fontWeight: "700" as const }, { color: "surface" }),
