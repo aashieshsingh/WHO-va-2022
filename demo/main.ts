@@ -23,10 +23,13 @@ interface CaseEntryData {
   ageAtDeath: number;
 }
 
+type UserRole = "admin" | "data-entry";
+
 interface RegisteredUser {
   userId: string;
   name: string;
   email: string;
+  role: UserRole;
   partnerSite: string;
   siteAssigned: string;
   createdAt: string;
@@ -35,6 +38,7 @@ interface RegisteredUser {
 interface RegisterUserPayload {
   name: string;
   email: string;
+  role: UserRole | "";
   partnerSite: string;
   siteAssigned: string;
   password: string;
@@ -127,6 +131,7 @@ const entryOutput = document.querySelector<HTMLOutputElement>("#case-entry-outpu
 const whoVaOutput = document.querySelector<HTMLOutputElement>("#who-va-output");
 let currentCaseEntry: CaseEntryData | undefined;
 let currentWhoVaData: Record<string, unknown> | undefined;
+let currentUser: RegisteredUser | undefined;
 
 const createEntryUid = () => {
   const randomPart = crypto.getRandomValues(new Uint32Array(1))[0].toString(36).padStart(7, "0");
@@ -140,6 +145,33 @@ const setVisibleStep = (step: "login" | "registration" | "admin" | "picker" | "e
   if (casePickerShell) casePickerShell.hidden = step !== "picker";
   if (entryShell) entryShell.hidden = step !== "entry";
   if (whoVaShell) whoVaShell.hidden = step !== "instrument";
+};
+
+const hasDataEntryAccess = () => currentUser?.role === "admin" || currentUser?.role === "data-entry";
+const hasAdminAccess = () => currentUser?.role === "admin";
+
+const updateAccessControls = () => {
+  if (showLogin) showLogin.hidden = currentUser != null;
+  if (showRegistration) showRegistration.hidden = currentUser != null && !hasAdminAccess();
+  if (newCaseEntry) newCaseEntry.hidden = !hasDataEntryAccess();
+  for (const button of startSelectedEntries) {
+    button.hidden = !hasDataEntryAccess();
+  }
+  renderSelectedEntrySummary();
+};
+
+const requireDataEntryAccess = () => {
+  if (hasDataEntryAccess()) return true;
+  showLoginOutput("Login with an admin or data entry account first.");
+  setVisibleStep("login");
+  return false;
+};
+
+const requireAdminAccess = () => {
+  if (hasAdminAccess() || currentUser == null) return true;
+  showLoginOutput("Only admin users can register new users.");
+  setVisibleStep("login");
+  return false;
 };
 
 const readStoredCaseEntries = (): StoredCaseEntry[] => {
@@ -178,7 +210,7 @@ let pickerStatusMessage: string | undefined;
 
 const renderSelectedEntrySummary = () => {
   const selected = selectedStoredCaseEntry();
-  for (const button of startSelectedEntries) button.disabled = !selected;
+  for (const button of startSelectedEntries) button.disabled = !selected || !hasDataEntryAccess();
   if (!selectedEntryOutput) return;
 
   if (!selected) {
@@ -317,6 +349,7 @@ const readRegistrationData = (sourceForm: HTMLFormElement): RegisterUserPayload 
     email: String(formData.get("email") ?? "")
       .trim()
       .toLowerCase(),
+    role: String(formData.get("role") ?? "").trim() as UserRole | "",
     partnerSite: String(formData.get("partnerSite") ?? "").trim(),
     siteAssigned: String(formData.get("siteAssigned") ?? "").trim(),
     password: String(formData.get("password") ?? "")
@@ -328,6 +361,7 @@ const validateRegistrationData = (data: RegisterUserPayload): string | undefined
     return "Name accepts letters only. Spaces are allowed between words.";
   }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(data.email)) return "Enter a valid email address.";
+  if (data.role !== "admin" && data.role !== "data-entry") return "Select a valid role.";
   if (!data.partnerSite) return "Select a partner site.";
   if (!data.siteAssigned) return "Select an assigned site.";
   if (data.password.length < 8) return "Password must be at least 8 characters.";
@@ -376,6 +410,8 @@ const showLoginOutput = (value: unknown) => {
 };
 
 const showRolePage = (user: RegisteredUser) => {
+  currentUser = user;
+  updateAccessControls();
   if (user.role === "admin") {
     if (adminSummary) {
       adminSummary.textContent = `Signed in as ${user.name} (${user.email}). Role: Admin.`;
@@ -501,11 +537,13 @@ showLogin?.addEventListener("click", () => {
 });
 
 adminRegisterUser?.addEventListener("click", () => {
+  if (!requireAdminAccess()) return;
   setVisibleStep("registration");
   registrationShell?.scrollIntoView({ block: "start" });
 });
 
 adminOpenDataEntry?.addEventListener("click", () => {
+  if (!requireDataEntryAccess()) return;
   renderDeceasedDropdown();
   setVisibleStep("picker");
   casePickerShell?.scrollIntoView({ block: "start" });
@@ -529,6 +567,7 @@ loginForm?.addEventListener("submit", (event) => {
   })();
 });
 showRegistration?.addEventListener("click", () => {
+  if (!requireAdminAccess()) return;
   setVisibleStep("registration");
   registrationShell?.scrollIntoView({ block: "start" });
 });
@@ -582,6 +621,7 @@ deceasedEntrySelect?.addEventListener("change", () => {
 });
 
 newCaseEntry?.addEventListener("click", () => {
+  if (!requireDataEntryAccess()) return;
   pickerStatusMessage = undefined;
   clearEntryFormValues();
   setVisibleStep("entry");
@@ -591,6 +631,7 @@ newCaseEntry?.addEventListener("click", () => {
 for (const button of startSelectedEntries) {
   button.addEventListener("click", () => {
     void (async () => {
+      if (!requireDataEntryAccess()) return;
       const selected = selectedStoredCaseEntry();
       if (!selected) return;
       fillCaseEntryForm(selected.caseEntry);
@@ -640,12 +681,14 @@ entryForm?.addEventListener("submit", (event) => {
 });
 
 chooseCaseEntry?.addEventListener("click", () => {
+  if (!requireDataEntryAccess()) return;
   renderDeceasedDropdown();
   setVisibleStep("picker");
   casePickerShell?.scrollIntoView({ block: "start" });
 });
 
 editCaseEntry?.addEventListener("click", () => {
+  if (!requireDataEntryAccess()) return;
   if (currentCaseEntry) fillCaseEntryForm(currentCaseEntry);
   setVisibleStep("entry");
   entryShell?.scrollIntoView({ block: "start" });

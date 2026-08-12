@@ -2,6 +2,7 @@ create table if not exists who_va_users (
   user_id text primary key,
   name text not null,
   email text not null unique,
+  role text not null default 'data-entry',
   partner_site text not null,
   site_assigned text not null,
   password_hash text not null,
