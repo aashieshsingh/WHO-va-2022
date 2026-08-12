@@ -48,7 +48,8 @@
     }
   },
   "scripts": {
-    "dev": "vite demo --host 127.0.0.1",
+    "dev": "node demo/server.mjs",
+    "dev:vite": "vite demo --host 127.0.0.1",
     "dev:db": "node demo/server.mjs",
     "db:migrate": "node demo/migrate.mjs",
     "build:demo": "vite build demo",

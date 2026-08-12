@@ -88,6 +88,7 @@ const entryForm = document.querySelector<HTMLFormElement>("#case-entry-form");
 const clearCaseEntry = document.querySelector<HTMLButtonElement>("#clear-case-entry");
 const uidInput = document.querySelector<HTMLInputElement>("#uid");
 const entryOutput = document.querySelector<HTMLOutputElement>("#case-entry-output");
+const whoVaOutput = document.querySelector<HTMLOutputElement>("#who-va-output");
 let currentCaseEntry: CaseEntryData | undefined;
 let currentWhoVaData: Record<string, unknown> | undefined;
 
@@ -257,9 +258,10 @@ const createWhoVaDataFromCaseEntry = (entry: CaseEntryData) => {
 };
 
 const showEntryOutput = (value: unknown) => {
-  if (!entryOutput) return;
-  entryOutput.hidden = false;
-  entryOutput.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  const output = whoVaShell?.hidden ? entryOutput : whoVaOutput;
+  if (!output) return;
+  output.hidden = false;
+  output.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
 };
 
 const applyCaseEntryToInstrument = async (caseEntry: CaseEntryData, whoVaData: Record<string, unknown>) => {
