@@ -149,6 +149,34 @@ describe("validation navigation", () => {
     root.unmount();
   });
 
+  it("renders locked initial answers as read-only and keeps their original value", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(
+        <WhoVaForm
+          instrument={requiredInstrument}
+          initialData={{ required_name: "Case Entry Name" }}
+          lockedQuestionNames={["required_name"]}
+        />
+      );
+    });
+
+    const input = container.querySelector<HTMLInputElement>('[data-testid="question-required_name"]');
+    expect(input?.value).toBe("Case Entry Name");
+    expect(input?.getAttribute("aria-readonly")).toBe("true");
+
+    const setNativeValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    await act(async () => {
+      setNativeValue?.call(input, "Edited Name");
+      input?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    expect(input?.value).toBe("Case Entry Name");
+    root.unmount();
+  });
+
   it("marks non-text required controls invalid after validation", async () => {
     const container = document.createElement("div");
     document.body.append(container);

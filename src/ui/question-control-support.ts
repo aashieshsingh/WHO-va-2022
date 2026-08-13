@@ -22,6 +22,7 @@ export const questionControlStyles = {
     { borderColor: "#b34231", backgroundColor: "#fff8f6" },
     { borderColor: "danger", backgroundColor: "dangerSoft" }
   ),
+  inputReadOnly: withWebTheme({ opacity: 0.72, backgroundColor: "#eef3f1" }, { backgroundColor: "border" }),
   choice: withWebTheme(
     {
       borderWidth: 1,

@@ -23,6 +23,7 @@ export class WhoVaFormElement extends HTMLElement {
   private readonly generatedDraftId = createDraftId();
   private configuredDraftStore: WhoVaDraftStore | undefined;
   private configuredPlatform: WhoVaPlatformServices | undefined;
+  private configuredLockedQuestionNames: readonly string[] = [];
   private renderVersion = 0;
 
   constructor() {
@@ -49,6 +50,20 @@ export class WhoVaFormElement extends HTMLElement {
 
   setData(data: SubmissionData): void {
     this.session.replaceData(data);
+  }
+
+  get lockedQuestionNames(): readonly string[] {
+    return this.configuredLockedQuestionNames;
+  }
+
+  set lockedQuestionNames(names: Iterable<string> | undefined) {
+    this.setLockedQuestionNames(names ?? []);
+  }
+
+  setLockedQuestionNames(names: Iterable<string>): void {
+    this.configuredLockedQuestionNames = [...names];
+    this.session.setLockedQuestionNames(this.configuredLockedQuestionNames);
+    if (this.isConnected) void this.renderForm();
   }
 
   validate(): SubmissionValidationResult {
@@ -104,6 +119,7 @@ export class WhoVaFormElement extends HTMLElement {
         draftId={this.getDraftId()}
         {...(this.configuredDraftStore ? { draftStore: this.configuredDraftStore } : {})}
         {...(this.configuredPlatform ? { platform: this.configuredPlatform } : {})}
+        lockedQuestionNames={this.configuredLockedQuestionNames}
         locale={language.locale}
         uiTranslations={language.uiTranslations}
         showSourceGuidance={this.hasAttribute("show-guidance")}

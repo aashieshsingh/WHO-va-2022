@@ -75,6 +75,21 @@ describe("shared field and submission validation", () => {
     ]);
   });
 
+  it("rejects alphanumeric and special characters in the respondent name", () => {
+    const question = getQuestion(whoVa2022Instrument, "Id10007");
+    expect(validateAnswer(question, "Ravi Kumar", {})).toEqual([]);
+    expect(validateAnswer(question, "Ravi2", {})).toEqual([
+      expect.objectContaining({
+        question: "Id10007",
+        code: "constraint",
+        message: "Respondent name can contain letters and spaces only"
+      })
+    ]);
+    expect(validateAnswer(question, "Ravi-Kumar", {})).toEqual([
+      expect.objectContaining({ question: "Id10007", code: "constraint" })
+    ]);
+  });
+
   it("enforces the complete labour-duration coding rule for Id10382", () => {
     const question = getQuestion(whoVa2022Instrument, "Id10382");
     const expectedMessage =

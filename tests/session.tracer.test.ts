@@ -109,6 +109,21 @@ describe("universal instrument session", () => {
     expect(session.getSnapshot().data).not.toHaveProperty("hostRecordId");
   });
 
+  it("prevents interviewer edits to locked case-entry answers", () => {
+    const session = createWhoVaSession(whoVa2022Instrument, {
+      initialData: { Id10017: "Case Name", Id10019: "female", hostRecordId: "host-only-123" },
+      lockedQuestionNames: ["Id10017", "Id10019", "hostRecordId"]
+    });
+
+    expect(session.getSnapshot().lockedQuestionNames).toEqual(["Id10017", "Id10019"]);
+    expect(() => session.setAnswer("Id10017", "Edited Name")).toThrow(/cannot be edited/);
+    expect(session.getSnapshot().data.Id10017).toBe("Case Name");
+
+    session.setLockedQuestionNames(["Id10019"]);
+    session.setAnswer("Id10017", "Respondent Corrected Name");
+    expect(session.getSnapshot().data.Id10017).toBe("Respondent Corrected Name");
+  });
+
   it("does not publish a redundant snapshot for the same instrument object", () => {
     const session = createWhoVaSession(whoVa2022Instrument);
     let notifications = 0;

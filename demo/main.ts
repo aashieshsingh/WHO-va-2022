@@ -17,6 +17,7 @@ interface CaseEntryData {
   date: string;
   householdHeadName: string;
   deceasedFullName: string;
+  deceasedSex: "female" | "male" | "undetermined";
   deceasedHouseAddress: string;
   pinCode: string;
   deathDate: string;
@@ -52,14 +53,24 @@ interface LoginPayload {
 interface SavedFormEntry {
   id: number;
   uid: string;
+  userId?: string | null;
   status: string;
   created_at: string;
   updated_at: string;
   completed_at: string | null;
 }
 
+interface SavedCaseEntry extends SavedFormEntry {
+  caseEntry?: CaseEntryData;
+  case_entry?: CaseEntryData;
+  whoVaData?: Record<string, unknown>;
+  who_va_prefill?: Record<string, unknown>;
+  updatedAt?: string;
+}
+
 interface SaveFormEntryPayload {
   uid: string;
+  userId?: string;
   caseEntry: CaseEntryData;
   whoVaData: Record<string, unknown>;
   status: "case-entry" | "completed";
@@ -200,6 +211,49 @@ const rememberCaseEntry = (caseEntry: CaseEntryData, whoVaData: Record<string, u
   writeStoredCaseEntries(entries.slice(0, 100));
 };
 
+const mergeStoredCaseEntries = (primary: StoredCaseEntry[], secondary: StoredCaseEntry[]) => {
+  const byUid = new Map<string, StoredCaseEntry>();
+  for (const entry of [...secondary, ...primary]) byUid.set(entry.uid, entry);
+  return [...byUid.values()].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+};
+
+const loadSavedCaseEntries = async (): Promise<StoredCaseEntry[]> => {
+  const response = await fetch(formEntriesApiUrl());
+  const body = await readJsonResponse<{ ok: boolean; entries?: SavedCaseEntry[]; error?: string }>(response);
+  if (!response.ok || !body.ok) {
+    throw new Error(body.error ?? `Saved entries could not be loaded. Status: ${response.status}.`);
+  }
+  return (body.entries ?? [])
+    .map((entry) => ({
+      uid: entry.uid,
+      caseEntry: entry.caseEntry ?? entry.case_entry,
+      whoVaData: entry.whoVaData ?? entry.who_va_prefill ?? {},
+      updatedAt: entry.updatedAt ?? entry.updated_at
+    }))
+    .filter(
+      (entry): entry is StoredCaseEntry =>
+        Boolean(entry.uid && entry.caseEntry?.deceasedFullName && entry.updatedAt)
+    );
+};
+
+const refreshDeceasedDropdown = async () => {
+  pickerStatusMessage = "Loading saved deceased entries...";
+  renderDeceasedDropdown();
+  try {
+    const remoteEntries = await loadSavedCaseEntries();
+    writeStoredCaseEntries(mergeStoredCaseEntries(remoteEntries, readStoredCaseEntries()).slice(0, 100));
+    pickerStatusMessage =
+      remoteEntries.length > 0
+        ? undefined
+        : "No deceased entries were returned from the database.";
+  } catch (error) {
+    console.warn("Could not load saved case entries", error);
+    pickerStatusMessage = error instanceof Error ? error.message : String(error);
+  } finally {
+    renderDeceasedDropdown();
+  }
+};
+
 const selectedStoredCaseEntry = () => {
   const uid = deceasedEntrySelect?.value;
   if (!uid) return undefined;
@@ -228,6 +282,7 @@ const renderSelectedEntrySummary = () => {
     `Address: ${entry.deceasedHouseAddress}`,
     `Village: ${entry.villages}`,
     `District: ${entry.district}`,
+    `Sex: ${entry.deceasedSex ?? "Not recorded"}`,
     `Death date: ${entry.deathDate}`,
     `Age at death: ${entry.ageAtDeath}`
   ].join("\n");
@@ -298,6 +353,7 @@ const readCaseEntryData = (sourceForm: HTMLFormElement): CaseEntryData => {
     date: String(formData.get("date") ?? ""),
     householdHeadName: String(formData.get("householdHeadName") ?? ""),
     deceasedFullName: String(formData.get("deceasedFullName") ?? ""),
+    deceasedSex: String(formData.get("deceasedSex") ?? "") as CaseEntryData["deceasedSex"],
     deceasedHouseAddress: String(formData.get("deceasedHouseAddress") ?? ""),
     pinCode: String(formData.get("pinCode") ?? ""),
     deathDate: String(formData.get("deathDate") ?? ""),
@@ -309,6 +365,7 @@ const createWhoVaDataFromCaseEntry = (entry: CaseEntryData) => {
   const whoVaData = createWhoVaInitialDataFromPrefill({
     deceased: {
       givenNames: entry.deceasedFullName,
+      sex: entry.deceasedSex,
       ...(entry.ageAtDeath >= 12 ? { ageInYears: entry.ageAtDeath } : {}),
       dateOfDeath: entry.deathDate
     },
@@ -420,7 +477,7 @@ const showRolePage = (user: RegisteredUser) => {
     adminShell?.scrollIntoView({ block: "start" });
     return;
   }
-  renderDeceasedDropdown();
+  void refreshDeceasedDropdown();
   setVisibleStep("picker");
   casePickerShell?.scrollIntoView({ block: "start" });
 };
@@ -429,6 +486,7 @@ const applyCaseEntryToInstrument = async (caseEntry: CaseEntryData, whoVaData: R
   currentCaseEntry = caseEntry;
   currentWhoVaData = whoVaData;
   form?.setAttribute("draft-id", caseEntry.uid);
+  form?.setLockedQuestionNames(Object.keys(whoVaData));
   form?.setData(whoVaData);
   setVisibleStep("instrument");
   whoVaShell?.scrollIntoView({ block: "start" });
@@ -544,7 +602,7 @@ adminRegisterUser?.addEventListener("click", () => {
 
 adminOpenDataEntry?.addEventListener("click", () => {
   if (!requireDataEntryAccess()) return;
-  renderDeceasedDropdown();
+  void refreshDeceasedDropdown();
   setVisibleStep("picker");
   casePickerShell?.scrollIntoView({ block: "start" });
 });
@@ -656,6 +714,7 @@ entryForm?.addEventListener("submit", (event) => {
       const whoVaData = createWhoVaDataFromCaseEntry(entry);
       const saved = await saveFormEntry({
         uid: entry.uid,
+        userId: currentUser?.userId,
         caseEntry: entry,
         whoVaData,
         status: "case-entry"
@@ -682,7 +741,7 @@ entryForm?.addEventListener("submit", (event) => {
 
 chooseCaseEntry?.addEventListener("click", () => {
   if (!requireDataEntryAccess()) return;
-  renderDeceasedDropdown();
+  void refreshDeceasedDropdown();
   setVisibleStep("picker");
   casePickerShell?.scrollIntoView({ block: "start" });
 });
@@ -697,6 +756,10 @@ editCaseEntry?.addEventListener("click", () => {
 form?.addEventListener("who-va-complete", (event) => {
   void (async () => {
     if (!currentCaseEntry || !currentWhoVaData) return;
+    if (!currentUser?.userId) {
+      showEntryOutput("Login before submitting WHO VA data.");
+      return;
+    }
     const result = (event as CustomEvent).detail as {
       data: Record<string, unknown>;
       issues: unknown[];
@@ -705,12 +768,14 @@ form?.addEventListener("who-va-complete", (event) => {
     try {
       const saved = await saveFormEntry({
         uid: currentCaseEntry.uid,
+        userId: currentUser.userId,
         caseEntry: currentCaseEntry,
         whoVaData: currentWhoVaData,
         status: "completed",
         submission: result.data,
         validationIssues: result.issues
       });
+      window.alert("WHO VA form submitted successfully.");
       showEntryOutput({ saved, completed: true });
     } catch (error) {
       showEntryOutput(error instanceof Error ? error.message : String(error));
@@ -719,5 +784,5 @@ form?.addEventListener("who-va-complete", (event) => {
 });
 
 setDefaultEntryValues();
-renderDeceasedDropdown();
+void refreshDeceasedDropdown();
 setVisibleStep("login");

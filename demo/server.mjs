@@ -191,6 +191,8 @@ const characterOnlyCaseEntryFields = {
 
 const characterOnlyPattern = /^[A-Za-z]+(?: [A-Za-z]+)*$/;
 
+const allowedCaseEntrySexValues = new Set(["female", "male", "undetermined"]);
+
 function validateCaseEntry(caseEntry) {
   for (const [field, label] of Object.entries(characterOnlyCaseEntryFields)) {
     const value = typeof caseEntry[field] === "string" ? caseEntry[field].trim() : "";
@@ -200,6 +202,12 @@ function validateCaseEntry(caseEntry) {
       error.statusCode = 400;
       throw error;
     }
+  }
+
+  if (!allowedCaseEntrySexValues.has(caseEntry.deceasedSex)) {
+    const error = new Error("Select a valid sex of the deceased.");
+    error.statusCode = 400;
+    throw error;
   }
 }
 
@@ -270,6 +278,29 @@ async function removeDraft(id) {
   await ensureDraftTable();
   await pool.query("delete from who_va_drafts where id = $1", [id]);
 }
+async function listFormEntries() {
+  const result = await pool.query(
+    `
+      select id, uid, user_id, status, created_at, updated_at, completed_at, case_entry, who_va_prefill
+      from who_va_form_entries
+      order by updated_at desc
+      limit 100
+    `
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    uid: row.uid,
+    userId: row.user_id,
+    status: row.status,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    completed_at: row.completed_at,
+    caseEntry: row.case_entry,
+    whoVaData: row.who_va_prefill
+  }));
+}
+
 async function saveFormEntry(payload) {
   const uid = typeof payload.uid === "string" ? payload.uid.trim() : "";
   if (!uid) {
@@ -278,6 +309,7 @@ async function saveFormEntry(payload) {
     throw error;
   }
 
+  const userId = typeof payload.userId === "string" && payload.userId.trim() ? payload.userId.trim() : null;
   const status = payload.status === "completed" ? "completed" : "case-entry";
   const caseEntry = payload.caseEntry && typeof payload.caseEntry === "object" ? payload.caseEntry : {};
   validateCaseEntry(caseEntry);
@@ -285,10 +317,49 @@ async function saveFormEntry(payload) {
   const submission = payload.submission && typeof payload.submission === "object" ? payload.submission : null;
   const validationIssues = Array.isArray(payload.validationIssues) ? payload.validationIssues : [];
 
+  const previousResult = await pool.query(
+    `
+      select uid, user_id, case_entry, who_va_prefill, submission, validation_issues, status, completed_at
+      from who_va_form_entries
+      where uid = $1
+    `,
+    [uid]
+  );
+  const previous = previousResult.rows[0];
+  const shouldArchivePrevious =
+    status === "completed" &&
+    previous &&
+    (previous.status === "completed" || previous.completed_at || previous.submission != null);
+  if (shouldArchivePrevious) {
+    await pool.query(
+      `
+        insert into who_va_recorded_data (
+          entry_uid,
+          user_id,
+          snapshot_type,
+          case_entry,
+          who_va_prefill,
+          submission,
+          validation_issues
+        )
+        values ($1, $2, 'before_update', $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb)
+      `,
+      [
+        uid,
+        previous.user_id,
+        JSON.stringify(previous.case_entry ?? {}),
+        JSON.stringify(previous.who_va_prefill ?? {}),
+        JSON.stringify(previous.submission ?? {}),
+        JSON.stringify(previous.validation_issues ?? [])
+      ]
+    );
+  }
+
   const result = await pool.query(
     `
       insert into who_va_form_entries (
         uid,
+        user_id,
         case_entry,
         who_va_prefill,
         submission,
@@ -296,8 +367,9 @@ async function saveFormEntry(payload) {
         status,
         completed_at
       )
-      values ($1, $2::jsonb, $3::jsonb, $4::jsonb, $5::jsonb, $6, case when $6 = 'completed' then now() else null end)
+      values ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb, $7, case when $7 = 'completed' then now() else null end)
       on conflict (uid) do update set
+        user_id = coalesce(excluded.user_id, who_va_form_entries.user_id),
         case_entry = excluded.case_entry,
         who_va_prefill = excluded.who_va_prefill,
         submission = coalesce(excluded.submission, who_va_form_entries.submission),
@@ -305,10 +377,11 @@ async function saveFormEntry(payload) {
         status = excluded.status,
         completed_at = case when excluded.status = 'completed' then now() else who_va_form_entries.completed_at end,
         updated_at = now()
-      returning id, uid, status, created_at, updated_at, completed_at
+      returning id, uid, user_id, status, created_at, updated_at, completed_at
     `,
     [
       uid,
+      userId,
       JSON.stringify(caseEntry),
       JSON.stringify(whoVaData),
       submission ? JSON.stringify(submission) : null,
@@ -317,7 +390,13 @@ async function saveFormEntry(payload) {
     ]
   );
 
-  return result.rows[0];
+  const saved = result.rows[0];
+
+  return {
+    ...saved,
+    archivedPrevious: Boolean(shouldArchivePrevious),
+    recordedSnapshot: Boolean(shouldArchivePrevious)
+  };
 }
 
 await runMigrations(pool);
@@ -341,6 +420,12 @@ const server = createHttpServer(async (request, response) => {
     if (url.pathname === "/api/health" && request.method === "GET") {
       await pool.query("select 1");
       sendJson(response, 200, { ok: true, database: process.env.PGDATABASE ?? "whova" });
+      return;
+    }
+
+    if (url.pathname === "/api/form-entries" && request.method === "GET") {
+      const entries = await listFormEntries();
+      sendJson(response, 200, { ok: true, entries });
       return;
     }
 

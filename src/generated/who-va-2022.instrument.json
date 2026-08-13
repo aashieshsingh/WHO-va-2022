@@ -1601,16 +1601,52 @@
       },
       "required": false,
       "readOnly": false,
-      "constraintMessage": {},
+      "constraintMessage": {
+        "en": "Respondent name can contain letters and spaces only"
+      },
       "validation": {
         "required": false,
         "dataType": "string",
-        "constraintMessage": {}
+        "constraintMessage": {
+          "en": "Respondent name can contain letters and spaces only"
+        },
+        "constraint": {
+          "source": "regex(., '^[A-Za-z ]+$')",
+          "ast": {
+            "type": "call",
+            "name": "regex",
+            "arguments": [
+              {
+                "type": "current"
+              },
+              {
+                "type": "literal",
+                "value": "^[A-Za-z ]+$"
+              }
+            ]
+          }
+        }
       },
       "sectionPath": [
         "respondent_backgr"
       ],
-      "ageGroup": "ALL"
+      "ageGroup": "ALL",
+      "constraint": {
+        "source": "regex(., '^[A-Za-z ]+$')",
+        "ast": {
+          "type": "call",
+          "name": "regex",
+          "arguments": [
+            {
+              "type": "current"
+            },
+            {
+              "type": "literal",
+              "value": "^[A-Za-z ]+$"
+            }
+          ]
+        }
+      }
     },
     {
       "name": "Id10007a",

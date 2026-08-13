@@ -248,6 +248,7 @@ export interface SessionSnapshot {
   currentSectionIndex: number;
   visibleSectionCount: number;
   questions: InstrumentQuestion[];
+  lockedQuestionNames: string[];
   issues: ValidationIssue[];
   canGoBack: boolean;
   canGoForward: boolean;
@@ -271,6 +272,7 @@ export type SessionNavigationResult =
 
 export interface WhoVaSessionOptions {
   initialData?: SubmissionData;
+  lockedQuestionNames?: Iterable<string>;
   initialSection?: string;
   locale?: string;
   uiTranslations?: WhoVaUiTranslations;
@@ -281,6 +283,7 @@ export interface WhoVaSessionOptions {
 export interface WhoVaSession {
   getSnapshot(): SessionSnapshot;
   setInstrument(instrument: InstrumentDefinition): void;
+  setLockedQuestionNames(names: Iterable<string>): void;
   setAnswer(name: string, value: AnswerValue | undefined): void;
   replaceData(data: SubmissionData): void;
   goToSection(name: string): boolean;

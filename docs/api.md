@@ -57,7 +57,7 @@ if (navigation.status === "completed") queueForSubmission(navigation.result.data
 const result = session.complete();
 ```
 
-`initialData` can also be supplied as raw canonical WHO question IDs. The helper maps common host data to IDs including `Id10002`/`Id10003` for HIV/AIDS and malaria mortality presets, `Id10010`/`Id10010c` for interviewer name/ID, `Id10017`/`Id10018`/`Id10019` for deceased name/sex, `Id10052` for citizenship/nationality, `Id10020`/`Id10021` for known DOB, `Id10022`/`Id10023_a`/`Id10023_b`/`Id10024` for date or year of death, and `Id10057` for a composed country/state/district/village/death-place string. These values are seeds, not locks: the interviewer can edit prefilled answers through the normal form controls unless the WHO instrument marks the question read-only. Host-only death-list identifiers are not WHO answers; keep them in `draftId`, route state, or the server submission envelope.
+`initialData` can also be supplied as raw canonical WHO question IDs. The helper maps common host data to IDs including `Id10002`/`Id10003` for HIV/AIDS and malaria mortality presets, `Id10010`/`Id10010c` for interviewer name/ID, `Id10017`/`Id10018`/`Id10019` for deceased name/sex, `Id10052` for citizenship/nationality, `Id10020`/`Id10021` for known DOB, `Id10022`/`Id10023_a`/`Id10023_b`/`Id10024` for date or year of death, and `Id10057` for a composed country/state/district/village/death-place string. These values can be made non-editable by passing their question IDs in `lockedQuestionNames`; demo case-entry data does this so fields populated from the case record cannot be edited while filling the WHO VA instrument. Host-only death-list identifiers are not WHO answers; keep them in `draftId`, route state, or the server submission envelope.
 
 Birth and death evidence are mutually exclusive: provide `dateOfBirth` or `ageInYears`, and provide `dateOfDeath` or `yearOfDeath`, never both. TypeScript rejects contradictory prefill objects and the runtime guard protects untyped callers.
 
@@ -121,6 +121,7 @@ Prefer `validateSubmission()` at server ingress even if the client already valid
 | `instrument`                    | Use a supplied canonical or translated instrument instead of the built-in default |
 | `session`                       | Reuse a caller-owned session                                                      |
 | `initialData`                   | Seed a new session                                                                |
+| `lockedQuestionNames`           | Mark supplied question IDs as read-only, commonly for case-entry prefill data     |
 | `locale` / `uiTranslations`     | Control question localization and form chrome                                     |
 | `showSourceGuidance`            | Display source guidance text                                                      |
 | `platform`                      | Inject date, audio, image, file, and attachment lifecycle services                |

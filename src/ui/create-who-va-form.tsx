@@ -45,6 +45,7 @@ interface WhoVaFormCommonProps {
   platform?: WhoVaPlatformServices;
   draftId?: string;
   draftStore?: WhoVaDraftStore;
+  lockedQuestionNames?: Iterable<string>;
   onReady?: (session: WhoVaSession) => void;
   onChange?: (data: SubmissionData, snapshot: SessionSnapshot) => void;
   onValidation?: (issues: ValidationIssue[]) => void;
@@ -157,6 +158,7 @@ export function createWhoVaForm(
       const initialData = props.initialData ?? restoredNavigation?.data;
       return createWhoVaSession(instrument, {
         ...(initialData ? { initialData } : {}),
+        ...(props.lockedQuestionNames ? { lockedQuestionNames: props.lockedQuestionNames } : {}),
         ...(restoredNavigation?.currentSection ? { initialSection: restoredNavigation.currentSection } : {}),
         locale,
         ...(props.uiTranslations ? { uiTranslations: props.uiTranslations } : {})
@@ -194,6 +196,10 @@ export function createWhoVaForm(
     useEffect(() => {
       session.setLocale(locale, props.uiTranslations);
     }, [locale, props.uiTranslations, session]);
+
+    useEffect(() => {
+      if (props.lockedQuestionNames !== undefined) session.setLockedQuestionNames(props.lockedQuestionNames);
+    }, [props.lockedQuestionNames, session]);
 
     useEffect(() => {
       session.setInstrument(instrument);

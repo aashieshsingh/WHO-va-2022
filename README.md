@@ -132,7 +132,7 @@ export default function App() {
 }
 ```
 
-`initialData` accepts canonical WHO question IDs directly, and `createWhoVaInitialDataFromPrefill()` maps common host context such as a death-list record, citizenship/nationality, logged-in interviewer profile, HIV/malaria mortality presets, and state/district location. Prefilled answers remain normal editable form answers unless the WHO instrument marks that question read-only. Keep host-only identifiers, such as a local death-list UUID or RBAC assignment ID, outside the WHO answer payload; pass them as `draftId` or attach them in your server submission envelope.
+`initialData` accepts canonical WHO question IDs directly, and `createWhoVaInitialDataFromPrefill()` maps common host context such as a death-list record, citizenship/nationality, logged-in interviewer profile, HIV/malaria mortality presets, and state/district location. Prefilled answers can be locked with `lockedQuestionNames`; use that for case-entry values that should not be editable while filling the WHO VA instrument. Keep host-only identifiers, such as a local death-list UUID or RBAC assignment ID, outside the WHO answer payload; pass them as `draftId` or attach them in your server submission envelope.
 
 Prefill evidence is mutually exclusive: choose date of birth or reported age, and choose date of death or reported year. Caller-owned form sessions must be paired with their instrument and cannot also receive `initialData`; managed forms accept `initialData` and create their own session.
 

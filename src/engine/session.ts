@@ -54,6 +54,7 @@ class UniversalWhoVaSession implements WhoVaSession {
   private visibleSectionsCache:
     { instrument: InstrumentDefinition; data: SubmissionData; sections: InstrumentSection[] } | undefined;
   private readonly listeners = new Set<(snapshot: SessionSnapshot) => void>();
+  private lockedQuestionNames: ReadonlySet<string>;
   private readonly now: () => Date;
   private locale: string;
   private messages: WhoVaUiMessages;
@@ -63,12 +64,16 @@ class UniversalWhoVaSession implements WhoVaSession {
     options: WhoVaSessionOptions = {}
   ) {
     this.now = options.now ?? (() => new Date());
+    this.lockedQuestionNames = new Set(options.lockedQuestionNames ?? []);
     this.locale = options.locale ?? "en";
     this.messages = resolveUiMessages(this.locale, options.uiTranslations);
     const startedAt = this.now();
     this.data = {};
     const initialData = options.initialData ?? {};
     const { choiceValuesByQuestionName, questionsByName } = getInstrumentRuntimeIndex(instrument);
+    this.lockedQuestionNames = new Set(
+      [...this.lockedQuestionNames].filter((name) => questionsByName.has(name))
+    );
     for (const [name, value] of Object.entries(initialData)) {
       const question = questionsByName.get(name);
       if (!question) continue;
@@ -122,12 +127,20 @@ class UniversalWhoVaSession implements WhoVaSession {
     );
   }
 
+  private presentQuestion(question: InstrumentQuestion): InstrumentQuestion {
+    return this.lockedQuestionNames.has(question.name) && !question.readOnly
+      ? { ...question, readOnly: true }
+      : question;
+  }
+
   private currentQuestions(section = this.currentSection()): InstrumentQuestion[] {
-    return directQuestions(this.instrument, section).filter(
-      (question) =>
-        !["calculated", "system"].includes(question.control) &&
-        isQuestionRelevantWithCalculatedData(this.instrument, question, this.data)
-    );
+    return directQuestions(this.instrument, section)
+      .filter(
+        (question) =>
+          !["calculated", "system"].includes(question.control) &&
+          isQuestionRelevantWithCalculatedData(this.instrument, question, this.data)
+      )
+      .map((question) => this.presentQuestion(question));
   }
 
   private notify(): void {
@@ -148,10 +161,17 @@ class UniversalWhoVaSession implements WhoVaSession {
       currentSectionIndex: index,
       visibleSectionCount: sections.length,
       questions: this.currentQuestions(currentSection),
+      lockedQuestionNames: [...this.lockedQuestionNames],
       issues: [...this.issues],
       canGoBack: index > 0,
       canGoForward: index < sections.length - 1
     };
+  }
+
+  setLockedQuestionNames(names: Iterable<string>): void {
+    const { questionsByName } = getInstrumentRuntimeIndex(this.instrument);
+    this.lockedQuestionNames = new Set([...names].filter((name) => questionsByName.has(name)));
+    this.notify();
   }
 
   setInstrument(instrument: InstrumentDefinition): void {
@@ -172,7 +192,11 @@ class UniversalWhoVaSession implements WhoVaSession {
 
   setAnswer(name: string, value: AnswerValue | undefined): void {
     const question = getQuestion(this.instrument, name);
-    if (question.readOnly || ["note", "calculated", "system"].includes(question.control)) {
+    if (
+      question.readOnly ||
+      this.lockedQuestionNames.has(name) ||
+      ["note", "calculated", "system"].includes(question.control)
+    ) {
       throw new Error(`${name} cannot be edited by the respondent`);
     }
     const nextData = { ...this.data };
