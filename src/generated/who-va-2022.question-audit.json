@@ -26,7 +26,7 @@
       "required": true,
       "choiceValues": [],
       "relevant": null,
-      "constraint": null,
+      "constraint": "regex(., '^[A-Za-z ]+$')",
       "calculation": null
     },
     {

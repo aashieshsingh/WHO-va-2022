@@ -94,6 +94,7 @@ function validCurrentValue(question: InstrumentQuestion): AnswerValue {
     return [question.choices?.find((choice) => !exclusiveValues.includes(choice.value))?.value ?? ""];
   }
   if (question.dataType === "string") {
+    if (source.includes("regex(")) return "Jane Doe";
     if (source.includes("Id10413")) return question.choices?.[0]?.value ?? "yes";
     return "yes";
   }
@@ -118,6 +119,7 @@ function invalidCurrentValue(question: InstrumentQuestion): AnswerValue {
     return [exclusive, other];
   }
   if (question.dataType === "string") {
+    if (source.includes("regex(")) return "Jane123";
     if (source.includes("Id10387")) return "no";
     if (source.includes("Id10413")) return "cigarettes";
     return "no";
@@ -158,7 +160,7 @@ describe("exhaustive WHO VA runtime expressions", () => {
   });
 
   it("accepts a valid current value for every configured constraint", () => {
-    expect(constrainedQuestions).toHaveLength(87);
+    expect(constrainedQuestions).toHaveLength(88);
 
     for (const question of constrainedQuestions) {
       const data = constraintData(question);

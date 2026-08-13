@@ -215,6 +215,7 @@ class Parser {
       }
       const supported = [
         "selected",
+        "regex",
         "count-selected",
         "string-length",
         "int",
@@ -231,12 +232,14 @@ class Parser {
 }
 
 function callNode(name: ExpressionCallNode["name"], arguments_: ExpressionNode[]): ExpressionCallNode {
-  const expectedArguments = name === "selected" ? 2 : name === "if" ? 3 : name === "today" ? 0 : 1;
+  const expectedArguments =
+    name === "selected" || name === "regex" ? 2 : name === "if" ? 3 : name === "today" ? 0 : 1;
   if (arguments_.length !== expectedArguments) {
     throw new Error(`${name}() requires ${expectedArguments} arguments`);
   }
   switch (name) {
     case "selected":
+    case "regex":
       return { type: "call", name, arguments: [arguments_[0]!, arguments_[1]!] };
     case "if":
       return { type: "call", name, arguments: [arguments_[0]!, arguments_[1]!, arguments_[2]!] };
@@ -365,6 +368,11 @@ export function evaluateExpression(
           const [value, wanted] = arguments_;
           if (Array.isArray(value)) return value.some((item) => equal(item, wanted));
           return equal(value, wanted);
+        }
+        case "regex": {
+          const [value, pattern] = arguments_;
+          if (isEmpty(value)) return false;
+          return new RegExp(String(pattern)).test(String(value));
         }
         case "count-selected": {
           const value = arguments_[0];

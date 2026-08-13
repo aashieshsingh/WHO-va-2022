@@ -8,6 +8,7 @@ describe("WHO VA expression semantics", () => {
     ["selected(${multiple}, 'yes')", { multiple: ["no", "yes"] }, undefined, true],
     ["count-selected(.) = 2", {}, ["one", "two"], true],
     ["not(selected(., 'dk'))", {}, ["yes"], true],
+    ["regex(., '^[A-Za-z ]+$')", {}, "Anita Rao", true],
     ["string-length(${missing}) = 0", {}, undefined, true],
     ["if(${missing} = 'NaN', 12, 0)", { missing: Number.NaN }, undefined, 12],
     ["int(27 div 12)", {}, undefined, 2],
@@ -32,7 +33,7 @@ describe("WHO VA expression semantics", () => {
       ...whoVa2022Instrument.sections.flatMap((section) => (section.relevant ? [section.relevant] : []))
     ];
 
-    expect(expressions).toHaveLength(463);
+    expect(expressions).toHaveLength(464);
     for (const expression of expressions) {
       expect(
         () =>

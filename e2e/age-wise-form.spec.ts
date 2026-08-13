@@ -104,7 +104,7 @@ async function openEnglishForm(page: Page): Promise<void> {
 }
 
 async function fillInterviewer(page: Page): Promise<void> {
-  await fill(page, "Id10010", "Browser E2E Interviewer");
+  await fill(page, "Id10010", "Browser Interviewer");
   await fill(page, "Id10010a", "35");
   await choose(page, "Id10010b", "female");
   await fill(page, "Id10010c", "E2E-001");
@@ -166,7 +166,7 @@ test("required and constraint errors appear, then clear after correction", async
   await expect(page.getByTestId("question-card-Id10010").getByRole("alert")).toContainText("is required");
   await attachState(page, testInfo, "required-errors");
 
-  await fill(page, "Id10010", "Browser E2E Interviewer");
+  await fill(page, "Id10010", "Browser Interviewer");
   await fill(page, "Id10010a", "3");
   await expect(page.getByTestId("question-card-Id10010a").getByRole("alert")).toContainText(
     "Interviewer should be an adult"

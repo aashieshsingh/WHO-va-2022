@@ -49,6 +49,7 @@ export interface SourceExpression {
 
 export type ExpressionCallNode =
   | { type: "call"; name: "selected"; arguments: [ExpressionNode, ExpressionNode] }
+  | { type: "call"; name: "regex"; arguments: [ExpressionNode, ExpressionNode] }
   | { type: "call"; name: "count-selected" | "string-length" | "int" | "date"; arguments: [ExpressionNode] }
   | { type: "call"; name: "if"; arguments: [ExpressionNode, ExpressionNode, ExpressionNode] }
   | { type: "call"; name: "today"; arguments: [] };

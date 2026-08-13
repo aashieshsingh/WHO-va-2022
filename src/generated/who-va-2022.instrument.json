@@ -1102,11 +1102,47 @@
       },
       "required": true,
       "readOnly": false,
-      "constraintMessage": {},
+      "constraintMessage": {
+        "en": "Interviewer name can contain letters and spaces only"
+      },
       "validation": {
         "required": true,
         "dataType": "string",
-        "constraintMessage": {}
+        "constraint": {
+          "source": "regex(., '^[A-Za-z ]+$')",
+          "ast": {
+            "type": "call",
+            "name": "regex",
+            "arguments": [
+              {
+                "type": "current"
+              },
+              {
+                "type": "literal",
+                "value": "^[A-Za-z ]+$"
+              }
+            ]
+          }
+        },
+        "constraintMessage": {
+          "en": "Interviewer name can contain letters and spaces only"
+        }
+      },
+      "constraint": {
+        "source": "regex(., '^[A-Za-z ]+$')",
+        "ast": {
+          "type": "call",
+          "name": "regex",
+          "arguments": [
+            {
+              "type": "current"
+            },
+            {
+              "type": "literal",
+              "value": "^[A-Za-z ]+$"
+            }
+          ]
+        }
       },
       "sectionPath": [
         "Interviewer"

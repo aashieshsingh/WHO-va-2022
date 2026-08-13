@@ -142,7 +142,7 @@ Prefill evidence is mutually exclusive: choose date of birth or reported age, an
 | ----------------------------------------- | -------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------ |
 | `presets.hivAidsMortality`                | `Id10002`                  | Is this a region of high HIV/AIDS mortality? | `"high" \| "low" \| "veryl"`                                                         |
 | `presets.malariaMortality`                | `Id10003`                  | Is this a region of high malaria mortality?  | `"high" \| "low" \| "veryl"`                                                         |
-| `interviewer.name`                        | `Id10010`                  | Name of VA interviewer                       | Non-empty string                                                                     |
+| `interviewer.name`                        | `Id10010`                  | Name of VA interviewer                       | Letters and spaces only                                                              |
 | `interviewer.age`                         | `Id10010a`                 | Age of VA interviewer                        | Number, 18-89 or 99                                                                  |
 | `interviewer.sex`                         | `Id10010b`                 | Sex of VA interviewer                        | `"female" \| "male" \| "undetermined"`                                               |
 | `interviewer.id`                          | `Id10010c`                 | ID of VA interviewer                         | Non-empty string                                                                     |
