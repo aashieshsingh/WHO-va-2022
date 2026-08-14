@@ -13,7 +13,8 @@
       "supportsTablet": true
     },
     "android": {
-      "package": "org.drguptavivek.whova2022demo"
+      "package": "org.drguptavivek.whova2022demo",
+      "permissions": ["CAMERA", "RECORD_AUDIO", "READ_MEDIA_IMAGES"]
     },
     "web": {
       "bundler": "metro",

@@ -30,6 +30,9 @@ export default function CompletedRoute() {
                 <Text style={submission.result.valid ? styles.validText : styles.invalidText}>
                   {submission.result.valid ? "Valid submission" : `${submission.result.issues.length} issues`}
                 </Text>
+                <Text style={submission.syncStatus === "pending" ? styles.pendingText : styles.validText}>
+                  {submission.syncStatus === "pending" ? "Pending server push" : "Pushed to server"}
+                </Text>
               </View>
             </View>
           ))

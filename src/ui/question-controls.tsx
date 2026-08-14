@@ -370,7 +370,7 @@ export function createWhoVaQuestionControls(primitives: WhoVaQuestionControlPrim
             return (
               <Pressable
                 key={choice.value}
-                accessibilityRole="option"
+                accessibilityRole="button"
                 accessibilityState={{ selected, disabled: readOnly }}
                 disabled={readOnly}
                 testID={`question-${question.name}-choice-${choice.value}`}

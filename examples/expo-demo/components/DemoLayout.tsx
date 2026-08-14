@@ -1,6 +1,7 @@
-import { Pressable, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import type { ReactNode } from "react";
+import { Pressable, ScrollView, StatusBar, StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useDemoState } from "./DemoState";
 
@@ -109,7 +110,6 @@ export const styles = StyleSheet.create({
     fontWeight: "700"
   },
   actionStack: {
-    gap: 12,
     marginTop: 24,
     width: "100%"
   },
@@ -149,13 +149,22 @@ export const styles = StyleSheet.create({
   formShell: {
     flex: 1
   },
+  fieldLabel: {
+    color: "#142a24",
+    fontSize: 14,
+    fontWeight: "700",
+    marginTop: 12
+  },
+  formPanel: {
+    marginTop: 16,
+    width: "100%"
+  },
   formToolbar: {
     alignItems: "center",
     backgroundColor: "#f8fafc",
     borderBottomColor: "#d7dee8",
     borderBottomWidth: 1,
     flexDirection: "row",
-    gap: 12,
     paddingHorizontal: 16,
     paddingVertical: 10
   },
@@ -164,6 +173,8 @@ export const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     fontWeight: "700",
+    marginLeft: 12,
+    marginRight: 12,
     width: "100%"
   },
   header: {
@@ -177,6 +188,12 @@ export const styles = StyleSheet.create({
     fontWeight: "700",
     marginTop: 6
   },
+  pendingText: {
+    color: "#7c5800",
+    fontSize: 13,
+    fontWeight: "700",
+    marginTop: 6
+  },
   listItem: {
     alignItems: "center",
     backgroundColor: "#ffffff",
@@ -184,14 +201,14 @@ export const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     flexDirection: "row",
-    gap: 12,
     marginTop: 12,
     padding: 14
   },
   listItemAction: {
     color: "#008a6a",
     fontSize: 14,
-    fontWeight: "800"
+    fontWeight: "800",
+    marginLeft: 12
   },
   listItemId: {
     color: "#6b7d78",
@@ -224,7 +241,7 @@ export const styles = StyleSheet.create({
   screenHeader: {
     alignItems: "center",
     flexDirection: "row",
-    gap: 10
+    width: "100%"
   },
   screenTitle: {
     color: "#0f172a",
@@ -236,7 +253,8 @@ export const styles = StyleSheet.create({
     color: "#0f172a",
     flex: 1,
     fontSize: 22,
-    fontWeight: "800"
+    fontWeight: "800",
+    marginLeft: 10
   },
   secondaryActionButton: {
     backgroundColor: "#e9f1ee"
@@ -272,6 +290,19 @@ export const styles = StyleSheet.create({
     color: "#0f172a",
     fontSize: 20,
     fontWeight: "700",
+    width: "100%"
+  },
+  textInput: {
+    backgroundColor: "#ffffff",
+    borderColor: "#9fb4ad",
+    borderRadius: 8,
+    borderWidth: 1,
+    color: "#142a24",
+    fontSize: 16,
+    minHeight: 46,
+    marginTop: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
     width: "100%"
   },
   validText: {

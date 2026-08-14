@@ -6,21 +6,42 @@ import { countAnswers, formatDateTime, useDemoState } from "../components/DemoSt
 
 export default function DraftsRoute() {
   const router = useRouter();
-  const { beginNewInterview, drafts } = useDemoState();
+  const { cases, drafts } = useDemoState();
 
   return (
     <DemoChrome>
       <ScreenScroll>
         <ScreenHeader
-          actionLabel="Start New"
+          actionLabel="Case Entry"
           onAction={() => {
-            beginNewInterview();
-            router.push("/start");
+            router.push("/case-entry");
           }}
-          title="Drafts"
+          title="Cases"
         />
+        {cases.length === 0 ? (
+          <EmptyState message="No local SQLite cases saved on this device." />
+        ) : (
+          cases.map((entry) => (
+            <Pressable
+              accessibilityRole="button"
+              key={entry.uid}
+              onPress={() => router.push({ pathname: "/start", params: { caseUid: entry.uid } })}
+              style={styles.listItem}
+            >
+              <View style={styles.listItemText}>
+                <Text style={styles.listItemTitle}>{entry.caseEntry.deceasedFullName}</Text>
+                <Text style={styles.listItemMeta}>Updated {formatDateTime(entry.updatedAt)}</Text>
+                <Text numberOfLines={1} style={styles.listItemId}>
+                  {entry.uid}
+                </Text>
+              </View>
+              <Text style={styles.listItemAction}>Open</Text>
+            </Pressable>
+          ))
+        )}
+        <Text style={[styles.screenTitleCompact, { marginTop: 24 }]}>Questionnaire Drafts</Text>
         {drafts.length === 0 ? (
-          <EmptyState message="No local drafts saved in this demo session." />
+          <EmptyState message="No WHO VA questionnaire drafts saved on this device." />
         ) : (
           drafts.map((draft) => (
             <Pressable

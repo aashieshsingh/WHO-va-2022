@@ -7,6 +7,7 @@ import { createPostgresPool } from "./db.mjs";
 import { runMigrations } from "./migrate.mjs";
 
 const PORT = Number(process.env.PORT ?? 5173);
+const HOST = process.env.HOST ?? "0.0.0.0";
 const pool = createPostgresPool();
 
 const corsHeaders = {
@@ -45,6 +46,10 @@ function generatedUserId(name) {
     .join("")
     .padEnd(2, "U");
   return `USR-${initials}-${Date.now().toString(36).toUpperCase()}-${randomBytes(3).toString("hex").toUpperCase()}`;
+}
+
+function generatedAuthKey() {
+  return `AUTH-${randomBytes(24).toString("hex").toUpperCase()}`;
 }
 
 function hashPassword(password) {
@@ -102,6 +107,9 @@ async function ensureUsersTable() {
   await pool.query(
     "alter table who_va_users add column if not exists role text not null default 'data-entry'"
   );
+  await pool.query("alter table who_va_users add column if not exists auth_key text");
+  await pool.query("update who_va_users set auth_key = $1 where auth_key is null", [generatedAuthKey()]);
+  await pool.query("alter table who_va_users alter column auth_key set not null");
   await pool.query("create index if not exists who_va_users_partner_site_idx on who_va_users (partner_site)");
   await pool.query(
     "create index if not exists who_va_users_site_assigned_idx on who_va_users (site_assigned)"
@@ -122,10 +130,11 @@ async function registerUser(payload) {
           role,
           partner_site,
           site_assigned,
-          password_hash
+          password_hash,
+          auth_key
         )
-        values ($1, $2, $3, $4, $5, $6, $7)
-        returning user_id, name, email, role, partner_site, site_assigned, created_at
+        values ($1, $2, $3, $4, $5, $6, $7, $8)
+        returning user_id, name, email, role, partner_site, site_assigned, auth_key, created_at
       `,
       [
         generatedUserId(user.name),
@@ -134,7 +143,8 @@ async function registerUser(payload) {
         user.role,
         user.partnerSite,
         user.siteAssigned,
-        hashPassword(user.password)
+        hashPassword(user.password),
+        generatedAuthKey()
       ]
     );
     const saved = result.rows[0];
@@ -145,6 +155,7 @@ async function registerUser(payload) {
       role: saved.role,
       partnerSite: saved.partner_site,
       siteAssigned: saved.site_assigned,
+      authKey: saved.auth_key,
       createdAt: saved.created_at
     };
   } catch (error) {
@@ -161,7 +172,7 @@ async function loginUser(payload) {
 
   const result = await pool.query(
     `
-      select user_id, name, email, role, partner_site, site_assigned, password_hash, created_at
+      select user_id, name, email, role, partner_site, site_assigned, password_hash, auth_key, created_at
       from who_va_users
       where email = $1
     `,
@@ -176,7 +187,8 @@ async function loginUser(payload) {
     role: saved.role,
     partnerSite: saved.partner_site,
     siteAssigned: saved.site_assigned,
-    createdAt: saved.created_at
+      authKey: saved.auth_key,
+      createdAt: saved.created_at
   };
 }
 const characterOnlyCaseEntryFields = {
@@ -301,6 +313,16 @@ async function listFormEntries() {
   }));
 }
 
+
+async function verifyUserAuthKey(userId, authKey) {
+  if (!userId || !authKey) throw badRequest("userId and authKey are required for completed submissions");
+  await ensureUsersTable();
+  const result = await pool.query(
+    "select 1 from who_va_users where user_id = $1 and auth_key = $2",
+    [userId, authKey]
+  );
+  if (!result.rows[0]) throw badRequest("Invalid user auth key");
+}
 async function saveFormEntry(payload) {
   const uid = typeof payload.uid === "string" ? payload.uid.trim() : "";
   if (!uid) {
@@ -311,6 +333,8 @@ async function saveFormEntry(payload) {
 
   const userId = typeof payload.userId === "string" && payload.userId.trim() ? payload.userId.trim() : null;
   const status = payload.status === "completed" ? "completed" : "case-entry";
+  const authKey = typeof payload.authKey === "string" && payload.authKey.trim() ? payload.authKey.trim() : null;
+  if (status === "completed") await verifyUserAuthKey(userId, authKey);
   const caseEntry = payload.caseEntry && typeof payload.caseEntry === "object" ? payload.caseEntry : {};
   validateCaseEntry(caseEntry);
   const whoVaData = payload.whoVaData && typeof payload.whoVaData === "object" ? payload.whoVaData : {};
@@ -482,8 +506,8 @@ const server = createHttpServer(async (request, response) => {
   }
 });
 
-server.listen(PORT, "127.0.0.1", () => {
-  console.log(`WHO VA demo with Postgres saving: http://127.0.0.1:${PORT}`);
+server.listen(PORT, HOST, () => {
+  console.log(`WHO VA demo with Postgres saving: http://${HOST}:${PORT}`);
 });
 
 process.on("SIGINT", async () => {

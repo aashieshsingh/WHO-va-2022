@@ -138,7 +138,6 @@ export const formStyles = {
     flexDirection: "row" as const,
     flexWrap: "nowrap" as const,
     alignItems: "center" as const,
-    gap: 8,
     justifyContent: "center" as const,
     marginTop: 12,
     marginBottom: 12

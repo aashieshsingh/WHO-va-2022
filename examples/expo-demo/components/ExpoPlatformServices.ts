@@ -8,7 +8,7 @@ import {
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as ImagePicker from "expo-image-picker";
-import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
+import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import { useMemo } from "react";
 import { Platform } from "react-native";
 
@@ -188,12 +188,19 @@ async function processImage(
         throw new Error("Native image dimensions were unavailable.");
       },
       async encodeJpeg(sourceUri, options: ImageEncodingOptions) {
-        const result = await manipulateAsync(
-          sourceUri,
-          [{ resize: { width: options.width, height: options.height } }],
-          { compress: options.quality, format: SaveFormat.JPEG }
-        );
-        return result.uri;
+        const context = ImageManipulator.manipulate(sourceUri);
+        try {
+          context.resize({ width: options.width, height: options.height });
+          const image = await context.renderAsync();
+          try {
+            const result = await image.saveAsync({ compress: options.quality, format: SaveFormat.JPEG });
+            return result.uri;
+          } finally {
+            image.release();
+          }
+        } finally {
+          context.release();
+        }
       },
       persist: persistFile,
       async remove(sourceUri) {

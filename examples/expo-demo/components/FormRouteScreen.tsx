@@ -2,7 +2,12 @@ import { AppState, Pressable, Text, View, type AppStateStatus } from "react-nati
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useRef } from "react";
 
-import type { SubmissionValidationResult, WhoVaDraft, WhoVaDraftController } from "@drguptavivek/who-2022-va";
+import type {
+  SubmissionData,
+  SubmissionValidationResult,
+  WhoVaDraft,
+  WhoVaDraftController
+} from "@drguptavivek/who-2022-va";
 import { WhoVaForm } from "@drguptavivek/who-2022-va/native";
 
 import { DemoChrome, EmptyState, styles } from "./DemoLayout";
@@ -11,13 +16,19 @@ import { useExpoWhoVaPlatformServices } from "./ExpoPlatformServices";
 
 export function FormRouteScreen({
   draft,
+  draftId,
   emptyMessage,
   formKey,
+  initialData,
+  lockedQuestionNames,
   title
 }: {
   draft?: WhoVaDraft;
+  draftId?: string;
   emptyMessage?: string;
   formKey: string;
+  initialData?: SubmissionData;
+  lockedQuestionNames?: string[];
   title: string;
 }) {
   const router = useRouter();
@@ -27,10 +38,28 @@ export function FormRouteScreen({
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const saveBeforeRoute = useCallback(
     async (route: Parameters<typeof router.push>[0]) => {
-      await draftControllerRef.current?.saveDraft();
+      try {
+        await draftControllerRef.current?.saveDraft();
+      } catch (error) {
+        setLastUpdate(`Draft save failed: ${(error as Error).message}`);
+      }
       router.push(route);
     },
-    [router]
+    [router, setLastUpdate]
+  );
+  const saveCurrentDraft = useCallback(
+    async () => {
+      if (!draftControllerRef.current) {
+        setLastUpdate("Draft is not ready yet");
+        return;
+      }
+      try {
+        await draftControllerRef.current.saveDraft();
+      } catch (error) {
+        setLastUpdate(`Draft save failed: ${(error as Error).message}`);
+      }
+    },
+    [setLastUpdate]
   );
 
   useEffect(() => {
@@ -57,6 +86,9 @@ export function FormRouteScreen({
             <Text style={styles.backButtonText}>Home</Text>
           </Pressable>
           <Text style={styles.formToolbarTitle}>{title}</Text>
+          <Pressable accessibilityRole="button" onPress={() => void saveCurrentDraft()} style={styles.backButton}>
+            <Text style={styles.backButtonText}>Save</Text>
+          </Pressable>
         </View>
         <View style={styles.screen}>
           <EmptyState message={emptyMessage} />
@@ -77,12 +109,16 @@ export function FormRouteScreen({
             <Text style={styles.backButtonText}>Home</Text>
           </Pressable>
           <Text style={styles.formToolbarTitle}>{title}</Text>
+          <Pressable accessibilityRole="button" onPress={() => void saveCurrentDraft()} style={styles.backButton}>
+            <Text style={styles.backButtonText}>Save</Text>
+          </Pressable>
         </View>
         <WhoVaForm
           key={formKey}
-          draftId={draft?.id}
+          draftId={draft?.id ?? draftId}
           draftStore={draftStore}
-          initialData={draft?.data}
+          initialData={draft?.data ?? initialData}
+          lockedQuestionNames={lockedQuestionNames}
           platform={platform}
           autoSaveDraftOnChange
           onChange={(data) => {

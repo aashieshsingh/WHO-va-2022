@@ -41,7 +41,7 @@ export const questionControlStyles = {
   choiceText: withWebTheme({ color: "#213b34" }, { color: "inkSubtle" }),
   dropdownList: { marginTop: 6 },
   hint: withWebTheme({ color: "#536b64", fontSize: 13, marginBottom: 10 }, { color: "muted" }),
-  actions: { flexDirection: "row" as const, flexWrap: "wrap" as const, gap: 8, marginTop: 8 },
+  actions: { flexDirection: "row" as const, flexWrap: "wrap" as const, marginTop: 8 },
   button: withWebTheme(
     {
       minHeight: 44,
