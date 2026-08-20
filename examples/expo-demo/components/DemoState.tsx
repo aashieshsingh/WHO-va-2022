@@ -25,6 +25,7 @@ import {
   type RegisteredUser,
   type StoredCaseEntry
 } from "./LocalDatabase";
+import { pushLocalDataToServer, type PushResult } from "./ServerSync";
 export type { CaseEntryData, CompletedSubmission, RegisteredUser, StoredCaseEntry } from "./LocalDatabase";
 
 interface DemoState {
@@ -43,6 +44,7 @@ interface DemoState {
   getDraft(id: string | undefined): WhoVaDraft | undefined;
   login(payload: LoginPayload, apiBaseUrl?: string): Promise<void>;
   logout(): Promise<void>;
+  pushToServer(apiBaseUrl?: string): Promise<PushResult>;
   saveCase(caseEntry: CaseEntryData): Promise<StoredCaseEntry>;
   setLastUpdate(message: string): void;
 }
@@ -69,6 +71,7 @@ export function DemoStateProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<RegisteredUser | undefined>(undefined);
   const [newFormKey, setNewFormKey] = useState(0);
   const [users, setUsers] = useState<RegisteredUser[]>([]);
+  const [serverApiBaseUrl, setServerApiBaseUrl] = useState(API_BASE_URL);
 
   const refreshLocalData = useCallback(async () => {
     const [savedDrafts, savedCompleted, savedCases, savedUsers] = await Promise.all([
@@ -165,7 +168,9 @@ export function DemoStateProvider({ children }: { children: ReactNode }) {
       },
       isDatabaseReady,
       async login(payload, apiBaseUrl) {
-        const user = await loginOnlineUser(payload, apiBaseUrl?.trim() || API_BASE_URL);
+        const targetApiBaseUrl = apiBaseUrl?.trim() || API_BASE_URL;
+        const user = await loginOnlineUser(payload, targetApiBaseUrl);
+        setServerApiBaseUrl(targetApiBaseUrl);
         setCurrentUser(user);
         setLastUpdate(`Signed in as ${user.name}`);
         await refreshLocalData();
@@ -174,6 +179,21 @@ export function DemoStateProvider({ children }: { children: ReactNode }) {
         await logoutCurrentUser();
         setCurrentUser(undefined);
         setLastUpdate("Signed out");
+      },
+      async pushToServer(apiBaseUrl) {
+        const result = await pushLocalDataToServer({
+          apiBaseUrl: apiBaseUrl?.trim() || serverApiBaseUrl,
+          cases,
+          completed,
+          currentUser,
+          drafts
+        });
+        await refreshLocalData();
+        const messageParts = [`Pushed ${result.pushed} entries`];
+        if (result.skipped) messageParts.push(`${result.skipped} skipped`);
+        if (result.failed) messageParts.push(`${result.failed} failed`);
+        setLastUpdate(messageParts.join(", "));
+        return result;
       },
       latestDraft: drafts[0],
       lastUpdate,
@@ -198,7 +218,19 @@ export function DemoStateProvider({ children }: { children: ReactNode }) {
       },
       setLastUpdate
     }),
-    [cases, completed, currentUser, draftStore, drafts, isDatabaseReady, lastUpdate, newFormKey, refreshLocalData, users]
+    [
+      cases,
+      completed,
+      currentUser,
+      draftStore,
+      drafts,
+      isDatabaseReady,
+      lastUpdate,
+      newFormKey,
+      refreshLocalData,
+      serverApiBaseUrl,
+      users
+    ]
   );
 
   return <DemoStateContext.Provider value={value}>{children}</DemoStateContext.Provider>;

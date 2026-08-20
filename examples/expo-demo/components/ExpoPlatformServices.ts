@@ -53,8 +53,14 @@ function pickAndroidDate(
     DateTimePickerAndroid.open({
       mode: "date",
       value: dateFromIso(currentValue),
-      onChange: (event, selectedDate) => {
-        resolve(event.type === "set" && selectedDate ? isoFromDate(selectedDate) : undefined);
+      onValueChange: (_event, selectedDate) => {
+        resolve(isoFromDate(selectedDate));
+      },
+      onDismiss: () => {
+        resolve(undefined);
+      },
+      onNeutralButtonPress: () => {
+        resolve(undefined);
       }
     });
   });

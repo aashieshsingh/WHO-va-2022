@@ -33,6 +33,7 @@ interface RegisteredUser {
   role: UserRole;
   partnerSite: string;
   siteAssigned: string;
+  authKey: string;
   createdAt: string;
 }
 
@@ -71,6 +72,7 @@ interface SavedCaseEntry extends SavedFormEntry {
 interface SaveFormEntryPayload {
   uid: string;
   userId?: string;
+  authKey?: string;
   caseEntry: CaseEntryData;
   whoVaData: Record<string, unknown>;
   status: "case-entry" | "completed";
@@ -715,6 +717,7 @@ entryForm?.addEventListener("submit", (event) => {
       const saved = await saveFormEntry({
         uid: entry.uid,
         userId: currentUser?.userId,
+        authKey: currentUser?.authKey,
         caseEntry: entry,
         whoVaData,
         status: "case-entry"
@@ -769,6 +772,7 @@ form?.addEventListener("who-va-complete", (event) => {
       const saved = await saveFormEntry({
         uid: currentCaseEntry.uid,
         userId: currentUser.userId,
+        authKey: currentUser.authKey,
         caseEntry: currentCaseEntry,
         whoVaData: currentWhoVaData,
         status: "completed",

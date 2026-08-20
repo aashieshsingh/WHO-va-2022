@@ -72,6 +72,8 @@ function badRequest(message) {
   return error;
 }
 
+const formEntryStatuses = new Set(["case-entry", "completed"]);
+
 function validateUserRegistration(payload) {
   const name = typeof payload.name === "string" ? payload.name.trim() : "";
   const email = typeof payload.email === "string" ? payload.email.trim().toLowerCase() : "";
@@ -315,7 +317,7 @@ async function listFormEntries() {
 
 
 async function verifyUserAuthKey(userId, authKey) {
-  if (!userId || !authKey) throw badRequest("userId and authKey are required for completed submissions");
+  if (!userId || !authKey) throw badRequest("userId and authKey are required for authenticated form entry pushes");
   await ensureUsersTable();
   const result = await pool.query(
     "select 1 from who_va_users where user_id = $1 and auth_key = $2",
@@ -332,9 +334,10 @@ async function saveFormEntry(payload) {
   }
 
   const userId = typeof payload.userId === "string" && payload.userId.trim() ? payload.userId.trim() : null;
-  const status = payload.status === "completed" ? "completed" : "case-entry";
+  const requestedStatus = typeof payload.status === "string" ? payload.status.trim() : "case-entry";
+  const status = formEntryStatuses.has(requestedStatus) ? requestedStatus : "case-entry";
   const authKey = typeof payload.authKey === "string" && payload.authKey.trim() ? payload.authKey.trim() : null;
-  if (status === "completed") await verifyUserAuthKey(userId, authKey);
+  if (authKey || status === "completed") await verifyUserAuthKey(userId, authKey);
   const caseEntry = payload.caseEntry && typeof payload.caseEntry === "object" ? payload.caseEntry : {};
   validateCaseEntry(caseEntry);
   const whoVaData = payload.whoVaData && typeof payload.whoVaData === "object" ? payload.whoVaData : {};
@@ -350,6 +353,9 @@ async function saveFormEntry(payload) {
     [uid]
   );
   const previous = previousResult.rows[0];
+  if (previous?.user_id && userId && previous.user_id !== userId) {
+    throw badRequest(`Entry ${uid} belongs to another user and cannot be overwritten by ${userId}`);
+  }
   const shouldArchivePrevious =
     status === "completed" &&
     previous &&
@@ -398,8 +404,14 @@ async function saveFormEntry(payload) {
         who_va_prefill = excluded.who_va_prefill,
         submission = coalesce(excluded.submission, who_va_form_entries.submission),
         validation_issues = excluded.validation_issues,
-        status = excluded.status,
-        completed_at = case when excluded.status = 'completed' then now() else who_va_form_entries.completed_at end,
+        status = case
+          when who_va_form_entries.status = 'completed' and excluded.status <> 'completed' then who_va_form_entries.status
+          else excluded.status
+        end,
+        completed_at = case
+          when excluded.status = 'completed' then now()
+          else who_va_form_entries.completed_at
+        end,
         updated_at = now()
       returning id, uid, user_id, status, created_at, updated_at, completed_at
     `,

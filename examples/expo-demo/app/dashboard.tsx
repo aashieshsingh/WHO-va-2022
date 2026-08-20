@@ -1,5 +1,6 @@
 import { useRouter, type Href } from "expo-router";
-import { Pressable, Text, View } from "react-native";
+import { useState } from "react";
+import { Pressable, Text, TextInput, View } from "react-native";
 
 import { DemoChrome, EmptyState, ScreenHeader, ScreenScroll, styles } from "../components/DemoLayout";
 import { countAnswers, formatDateTime, useDemoState, type RegisteredUser } from "../components/DemoState";
@@ -36,7 +37,11 @@ function userLabel(user: UserDashboard["user"]): string {
 
 export default function DashboardRoute() {
   const router = useRouter();
-  const { cases, completed, currentUser, drafts, users } = useDemoState();
+  const { cases, completed, currentUser, drafts, pushToServer, users } = useDemoState();
+  const [pushMessage, setPushMessage] = useState("");
+  const [pushFailed, setPushFailed] = useState(false);
+  const [isPushing, setIsPushing] = useState(false);
+  const [pushApiBaseUrl, setPushApiBaseUrl] = useState("");
   const userMap = new Map<string, UserDashboard["user"]>();
   for (const user of users) userMap.set(user.userId, user);
   if (currentUser) userMap.set(currentUser.userId, currentUser);
@@ -119,6 +124,44 @@ export default function DashboardRoute() {
     <DemoChrome>
       <ScreenScroll>
         <ScreenHeader title="Dashboard" />
+        <View style={styles.actionStack}>
+          <Text style={styles.fieldLabel}>Server URL</Text>
+          <TextInput
+            autoCapitalize="none"
+            keyboardType="url"
+            onChangeText={setPushApiBaseUrl}
+            placeholder="http://192.168.0.178:5173"
+            style={styles.textInput}
+            value={pushApiBaseUrl}
+          />
+          <Pressable
+            accessibilityRole="button"
+            disabled={isPushing}
+            onPress={() => {
+              setIsPushing(true);
+              setPushFailed(false);
+              setPushMessage("Pushing final mobile data to server...");
+              void pushToServer(pushApiBaseUrl)
+                .then((result) => {
+                  setPushFailed(result.failed > 0);
+                  setPushMessage(
+                    `Pushed ${result.pushed} entries. ${result.skipped} skipped. ${result.failed} failed.`
+                  );
+                })
+                .catch((error: unknown) => {
+                  setPushFailed(true);
+                  setPushMessage((error as Error).message);
+                })
+                .finally(() => {
+                  setIsPushing(false);
+                });
+            }}
+            style={[styles.actionButton, isPushing && styles.disabledButton]}
+          >
+            <Text style={styles.actionButtonText}>{isPushing ? "Pushing..." : "Push Final Data"}</Text>
+          </Pressable>
+          {pushMessage ? <Text style={pushFailed ? styles.pendingText : styles.validText}>{pushMessage}</Text> : null}
+        </View>
         {dashboards.length === 0 ? (
           <EmptyState message="No WHO form entries are saved on this device yet." />
         ) : (

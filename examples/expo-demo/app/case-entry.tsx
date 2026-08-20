@@ -49,8 +49,8 @@ export default function CaseEntryRoute() {
     DateTimePickerAndroid.open({
       mode: "date",
       value: dateFromIso(entry[field]),
-      onChange: (event, selectedDate) => {
-        if (event.type === "set" && selectedDate) updateText(field, isoFromDate(selectedDate));
+      onValueChange: (_event, selectedDate) => {
+        updateText(field, isoFromDate(selectedDate));
       }
     });
   };
