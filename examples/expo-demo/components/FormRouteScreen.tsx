@@ -120,7 +120,7 @@ export function FormRouteScreen({
           initialData={draft?.data ?? initialData}
           lockedQuestionNames={lockedQuestionNames}
           platform={platform}
-          autoSaveDraftOnChange
+          autoSaveDraftIntervalMs={false}
           onChange={(data) => {
             setLastUpdate(`${Object.keys(data).length} draft answers captured`);
           }}

@@ -254,8 +254,26 @@ export async function loginCachedUser(data: LoginPayload): Promise<RegisteredUse
   return userFromRow(row);
 }
 
+export async function listUsers(): Promise<RegisteredUser[]> {
+  const database = await openDatabase();
+  const rows = await database.getAllAsync<UserRow>(
+    `
+      SELECT user_id, name, email, role, partner_site, site_assigned, password_hash, auth_key, created_at
+      FROM users
+      ORDER BY name ASC, email ASC
+    `
+  );
+  return rows.map(userFromRow);
+}
+
+function normalizeApiBaseUrl(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return trimmed;
+  return /^https?:\/\//iu.test(trimmed) ? trimmed : `http://${trimmed}`;
+}
+
 export async function loginOnlineUser(data: LoginPayload, apiBaseUrl: string): Promise<RegisteredUser> {
-  const url = `${apiBaseUrl.replace(/\/$/u, "")}/api/login`;
+  const url = `${normalizeApiBaseUrl(apiBaseUrl).replace(/\/$/u, "")}/api/login`;
   let response: Response;
   try {
     response = await fetch(url, {
@@ -273,7 +291,16 @@ export async function loginOnlineUser(data: LoginPayload, apiBaseUrl: string): P
     }
   }
 
-  const body = (await response.json()) as { ok: boolean; user?: RegisteredUser; error?: string };
+  const responseText = await response.text();
+  let body: { ok: boolean; user?: RegisteredUser; error?: string };
+  try {
+    body = responseText ? (JSON.parse(responseText) as { ok: boolean; user?: RegisteredUser; error?: string }) : { ok: false };
+  } catch {
+    const preview = responseText.trim().slice(0, 80);
+    throw new Error(
+      `Login server at ${url} did not return JSON. Check that Server URL points to the WHO VA demo API, not the Expo app or another web page.${preview ? ` Response started with: ${preview}` : ""}`
+    );
+  }
   if (!response.ok || !body.ok || !body.user?.authKey) {
     throw new Error(body.error ?? "Online login failed.");
   }

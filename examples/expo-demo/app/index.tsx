@@ -8,7 +8,7 @@ import { useDemoState } from "../components/DemoState";
 export default function HomeRoute() {
   const router = useRouter();
   const { cases, completed, currentUser, drafts, isDatabaseReady, latestDraft, login, logout } = useDemoState();
-  const [apiBaseUrl, setApiBaseUrl] = useState("http://");
+  const [apiBaseUrl, setApiBaseUrl] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loginMessage, setLoginMessage] = useState("");
@@ -69,6 +69,11 @@ export default function HomeRoute() {
         </Text>
         <Text style={styles.screenCopy}>Case entries, drafts, and completed submissions are stored in SQLite.</Text>
         <View style={styles.actionStack}>
+          <ActionButton
+            disabled={!isDatabaseReady}
+            label="Dashboard"
+            onPress={() => router.push("/dashboard")}
+          />
           <ActionButton
             disabled={!isDatabaseReady}
             label="Case Data Entry"

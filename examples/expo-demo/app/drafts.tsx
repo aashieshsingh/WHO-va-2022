@@ -7,6 +7,8 @@ import { countAnswers, formatDateTime, useDemoState } from "../components/DemoSt
 export default function DraftsRoute() {
   const router = useRouter();
   const { cases, drafts } = useDemoState();
+  const caseUids = new Set(cases.map((entry) => entry.uid));
+  const standaloneDrafts = drafts.filter((draft) => !caseUids.has(draft.id));
 
   return (
     <DemoChrome>
@@ -21,29 +23,36 @@ export default function DraftsRoute() {
         {cases.length === 0 ? (
           <EmptyState message="No local SQLite cases saved on this device." />
         ) : (
-          cases.map((entry) => (
-            <Pressable
-              accessibilityRole="button"
-              key={entry.uid}
-              onPress={() => router.push({ pathname: "/start", params: { caseUid: entry.uid } })}
-              style={styles.listItem}
-            >
-              <View style={styles.listItemText}>
-                <Text style={styles.listItemTitle}>{entry.caseEntry.deceasedFullName}</Text>
-                <Text style={styles.listItemMeta}>Updated {formatDateTime(entry.updatedAt)}</Text>
-                <Text numberOfLines={1} style={styles.listItemId}>
-                  {entry.uid}
-                </Text>
-              </View>
-              <Text style={styles.listItemAction}>Open</Text>
-            </Pressable>
-          ))
+          cases.map((entry) => {
+            const matchingDraft = drafts.find((draft) => draft.id === entry.uid);
+            return (
+              <Pressable
+                accessibilityRole="button"
+                key={entry.uid}
+                onPress={() => router.push({ pathname: "/start", params: { caseUid: entry.uid } })}
+                style={styles.listItem}
+              >
+                <View style={styles.listItemText}>
+                  <Text style={styles.listItemTitle}>{entry.caseEntry.deceasedFullName}</Text>
+                  <Text style={styles.listItemMeta}>
+                    {matchingDraft
+                      ? `${countAnswers(matchingDraft)} draft answers, updated ${formatDateTime(matchingDraft.updatedAt)}`
+                      : `Case updated ${formatDateTime(entry.updatedAt)}`}
+                  </Text>
+                  <Text numberOfLines={1} style={styles.listItemId}>
+                    {entry.uid}
+                  </Text>
+                </View>
+                <Text style={styles.listItemAction}>{matchingDraft ? "Continue" : "Open"}</Text>
+              </Pressable>
+            );
+          })
         )}
         <Text style={[styles.screenTitleCompact, { marginTop: 24 }]}>Questionnaire Drafts</Text>
-        {drafts.length === 0 ? (
+        {standaloneDrafts.length === 0 ? (
           <EmptyState message="No WHO VA questionnaire drafts saved on this device." />
         ) : (
-          drafts.map((draft) => (
+          standaloneDrafts.map((draft) => (
             <Pressable
               accessibilityRole="button"
               key={draft.id}

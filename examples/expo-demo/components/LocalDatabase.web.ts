@@ -1,14 +1,62 @@
 import type { SubmissionValidationResult, WhoVaDraft } from "@drguptavivek/who-2022-va";
 
+export type UserRole = "admin" | "data-entry";
+
+export interface RegisteredUser {
+  userId: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  partnerSite: string;
+  siteAssigned: string;
+  authKey: string;
+  createdAt: string;
+}
+
 export interface CompletedSubmission {
   id: string;
   completedAt: string;
   result: SubmissionValidationResult;
   syncStatus: "pending" | "pushed";
+  authKey?: string;
+  caseEntry?: CaseEntryData;
+  userId?: string;
+}
+
+export interface LoginPayload {
+  email: string;
+  password: string;
+}
+
+export interface CaseEntryData {
+  district: string;
+  block: string;
+  villages: string;
+  phc: string;
+  subcentre: string;
+  uid: string;
+  date: string;
+  householdHeadName: string;
+  deceasedFullName: string;
+  deceasedSex: "female" | "male" | "undetermined";
+  deceasedHouseAddress: string;
+  pinCode: string;
+  deathDate: string;
+  ageAtDeath: number;
+}
+
+export interface StoredCaseEntry {
+  uid: string;
+  userId: string;
+  caseEntry: CaseEntryData;
+  whoVaData: Record<string, unknown>;
+  updatedAt: string;
 }
 
 const DRAFTS_KEY = "who-va-2022:expo-demo:drafts";
 const COMPLETED_KEY = "who-va-2022:expo-demo:completed";
+const USERS_KEY = "who-va-2022:expo-demo:users";
+const CASES_KEY = "who-va-2022:expo-demo:cases";
 
 function readJson<T>(key: string, fallback: T): T {
   const value = globalThis.localStorage?.getItem(key);
@@ -22,6 +70,8 @@ function writeJson<T>(key: string, value: T): void {
 export async function initializeLocalDatabase(): Promise<void> {
   readJson<WhoVaDraft[]>(DRAFTS_KEY, []);
   readJson<CompletedSubmission[]>(COMPLETED_KEY, []);
+  readJson<RegisteredUser[]>(USERS_KEY, []);
+  readJson<StoredCaseEntry[]>(CASES_KEY, []);
 }
 
 export async function listDrafts(): Promise<WhoVaDraft[]> {
@@ -64,4 +114,39 @@ export async function markCompletedSubmissionPushed(id: string): Promise<void> {
       submission.id === id ? { ...submission, syncStatus: "pushed" } : submission
     )
   );
+}
+
+export async function listUsers(): Promise<RegisteredUser[]> {
+  return readJson<RegisteredUser[]>(USERS_KEY, []).sort((left, right) => left.name.localeCompare(right.name));
+}
+
+export async function listCaseEntries(): Promise<StoredCaseEntry[]> {
+  return readJson<StoredCaseEntry[]>(CASES_KEY, []).sort(
+    (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
+  );
+}
+
+export async function loginOnlineUser(_data: LoginPayload, _apiBaseUrl: string): Promise<RegisteredUser> {
+  throw new Error("Online login is not available in the web storage demo.");
+}
+
+export async function loadCurrentUser(): Promise<RegisteredUser | undefined> {
+  return undefined;
+}
+
+export async function logoutCurrentUser(): Promise<void> {
+  return undefined;
+}
+
+export async function saveCaseEntry(entry: StoredCaseEntry): Promise<void> {
+  const cases = (await listCaseEntries()).filter((saved) => saved.uid !== entry.uid);
+  writeJson(CASES_KEY, [entry, ...cases]);
+}
+
+export function createEntryUid(): string {
+  return `VA-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
+}
+
+export function validateCaseEntryData(_caseEntry: CaseEntryData): string | undefined {
+  return undefined;
 }

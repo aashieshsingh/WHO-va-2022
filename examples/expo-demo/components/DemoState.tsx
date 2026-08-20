@@ -9,6 +9,7 @@ import {
   listCaseEntries,
   listCompletedSubmissions,
   listDrafts,
+  listUsers,
   loadCurrentUser,
   loadDraft,
   loginOnlineUser,
@@ -36,6 +37,7 @@ interface DemoState {
   latestDraft: WhoVaDraft | undefined;
   lastUpdate: string;
   newFormKey: number;
+  users: RegisteredUser[];
   addCompleted(result: SubmissionValidationResult): void;
   beginNewInterview(): void;
   getDraft(id: string | undefined): WhoVaDraft | undefined;
@@ -66,16 +68,19 @@ export function DemoStateProvider({ children }: { children: ReactNode }) {
   const [cases, setCases] = useState<StoredCaseEntry[]>([]);
   const [currentUser, setCurrentUser] = useState<RegisteredUser | undefined>(undefined);
   const [newFormKey, setNewFormKey] = useState(0);
+  const [users, setUsers] = useState<RegisteredUser[]>([]);
 
   const refreshLocalData = useCallback(async () => {
-    const [savedDrafts, savedCompleted, savedCases] = await Promise.all([
+    const [savedDrafts, savedCompleted, savedCases, savedUsers] = await Promise.all([
       listDrafts(),
       listCompletedSubmissions(),
-      listCaseEntries()
+      listCaseEntries(),
+      listUsers()
     ]);
     setDrafts(savedDrafts);
     setCompleted(savedCompleted);
     setCases(savedCases);
+    setUsers(savedUsers);
   }, []);
 
   useEffect(() => {
@@ -160,7 +165,7 @@ export function DemoStateProvider({ children }: { children: ReactNode }) {
       },
       isDatabaseReady,
       async login(payload, apiBaseUrl) {
-        const user = await loginOnlineUser(payload, apiBaseUrl || API_BASE_URL);
+        const user = await loginOnlineUser(payload, apiBaseUrl?.trim() || API_BASE_URL);
         setCurrentUser(user);
         setLastUpdate(`Signed in as ${user.name}`);
         await refreshLocalData();
@@ -173,6 +178,7 @@ export function DemoStateProvider({ children }: { children: ReactNode }) {
       latestDraft: drafts[0],
       lastUpdate,
       newFormKey,
+      users,
       async saveCase(caseEntry) {
         if (!currentUser) throw new Error("Login before saving case data.");
         const validationError = validateCaseEntryData(caseEntry);
@@ -192,7 +198,7 @@ export function DemoStateProvider({ children }: { children: ReactNode }) {
       },
       setLastUpdate
     }),
-    [cases, completed, currentUser, draftStore, drafts, isDatabaseReady, lastUpdate, newFormKey, refreshLocalData]
+    [cases, completed, currentUser, draftStore, drafts, isDatabaseReady, lastUpdate, newFormKey, refreshLocalData, users]
   );
 
   return <DemoStateContext.Provider value={value}>{children}</DemoStateContext.Provider>;

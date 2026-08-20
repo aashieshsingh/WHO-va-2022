@@ -133,6 +133,14 @@ export const styles = StyleSheet.create({
   disabledButtonText: {
     color: "#5f746e"
   },
+  dashboardGroup: {
+    borderColor: "#dbe7e3",
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 16,
+    padding: 14,
+    width: "100%"
+  },
   emptyState: {
     alignItems: "center",
     borderColor: "#dbe7e3",
@@ -228,6 +236,30 @@ export const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "800"
   },
+  metricBox: {
+    backgroundColor: "#eef6f3",
+    borderRadius: 8,
+    flex: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 12
+  },
+  metricLabel: {
+    color: "#536b64",
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 2
+  },
+  metricRow: {
+    columnGap: 8,
+    flexDirection: "row",
+    marginTop: 12,
+    width: "100%"
+  },
+  metricValue: {
+    color: "#142a24",
+    fontSize: 22,
+    fontWeight: "800"
+  },
   screen: {
     padding: 20
   },
@@ -279,6 +311,25 @@ export const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: 13,
     fontWeight: "800"
+  },
+  statusPill: {
+    backgroundColor: "#e9f1ee",
+    borderRadius: 8,
+    color: "#183d33",
+    fontSize: 12,
+    fontWeight: "800",
+    marginLeft: 12,
+    overflow: "hidden",
+    paddingHorizontal: 10,
+    paddingVertical: 6
+  },
+  statusPillFinal: {
+    backgroundColor: "#dff5ed",
+    color: "#007858"
+  },
+  statusPillPending: {
+    backgroundColor: "#fff3d6",
+    color: "#7c5800"
   },
   subtitle: {
     color: "#475569",

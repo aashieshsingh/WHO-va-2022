@@ -40,6 +40,7 @@ export default function CaseEntryRoute() {
   const { currentUser, saveCase } = useDemoState();
   const [entry, setEntry] = useState<CaseEntryData>(() => emptyCaseEntry());
   const [message, setMessage] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
 
   const updateText = (field: CaseEntryField, value: string) => {
     setEntry((current) => ({ ...current, [field]: value }));
@@ -111,20 +112,26 @@ export default function CaseEntryRoute() {
           {message ? <Text style={styles.invalidText}>{message}</Text> : null}
           <View style={styles.actionStack}>
             <ActionButton
+              disabled={isSaving}
               label="Save Case and Start WHO VA"
               onPress={() => {
+                if (isSaving) return;
                 setMessage("");
                 const validationError = validateCaseEntryData(entry);
                 if (validationError) {
                   setMessage(validationError);
                   return;
                 }
+                setIsSaving(true);
                 void saveCase(entry)
                   .then((saved) => {
                     router.push({ pathname: "/start", params: { caseUid: saved.uid } });
                   })
                   .catch((error: unknown) => {
                     setMessage((error as Error).message);
+                  })
+                  .finally(() => {
+                    setIsSaving(false);
                   });
               }}
             />
