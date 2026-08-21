@@ -1,5 +1,6 @@
 import * as SQLite from "expo-sqlite";
 
+import { WHO_VA_FORM_VERSION, whoVa2022Instrument } from "@drguptavivek/who-2022-va";
 import type { SubmissionData, SubmissionValidationResult, WhoVaDraft } from "@drguptavivek/who-2022-va";
 
 export type UserRole = "admin" | "data-entry";
@@ -94,6 +95,19 @@ interface CaseEntryRow {
   updated_at: string;
 }
 
+interface ServerMobileSyncEntry {
+  uid: string;
+  userId?: string | null;
+  status?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  completedAt?: string | null;
+  caseEntry?: CaseEntryData | null;
+  whoVaData?: SubmissionData | null;
+  submission?: SubmissionData | null;
+  validationIssues?: unknown[] | null;
+}
+
 let databasePromise: Promise<Database> | undefined;
 
 async function openDatabase(): Promise<Database> {
@@ -109,7 +123,12 @@ function decodeJson<T>(value: string, label: string): T {
   }
 }
 
-async function addColumnIfMissing(database: Database, table: string, column: string, definition: string): Promise<void> {
+async function addColumnIfMissing(
+  database: Database,
+  table: string,
+  column: string,
+  definition: string
+): Promise<void> {
   const columns = await database.getAllAsync<{ name: string }>(`PRAGMA table_info(${table})`);
   if (columns.some((candidate) => candidate.name === column)) return;
   await database.execAsync(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
@@ -271,6 +290,66 @@ function normalizeApiBaseUrl(value: string): string {
   if (!trimmed) return trimmed;
   return /^https?:\/\//iu.test(trimmed) ? trimmed : `http://${trimmed}`;
 }
+function createMobileSyncUrl(apiBaseUrl: string, user: RegisteredUser): string {
+  const params = new URLSearchParams({ userId: user.userId, authKey: user.authKey });
+  return `${normalizeApiBaseUrl(apiBaseUrl).replace(/\/$/u, "")}/api/mobile-sync?${params.toString()}`;
+}
+
+function createSyncedSubmissionResult(entry: ServerMobileSyncEntry): SubmissionValidationResult {
+  return {
+    data: entry.submission ?? {},
+    formVersion: WHO_VA_FORM_VERSION,
+    instrumentId: whoVa2022Instrument.id,
+    instrumentVersion: whoVa2022Instrument.version,
+    issues: Array.isArray(entry.validationIssues) ? entry.validationIssues : [],
+    valid: !Array.isArray(entry.validationIssues) || entry.validationIssues.length === 0
+  } as SubmissionValidationResult;
+}
+
+export async function syncServerDataForUser(user: RegisteredUser, apiBaseUrl: string): Promise<number> {
+  const url = createMobileSyncUrl(apiBaseUrl, user);
+  const response = await fetch(url);
+  const responseText = await response.text();
+  let body: { ok: boolean; entries?: ServerMobileSyncEntry[]; error?: string };
+  try {
+    body = responseText
+      ? (JSON.parse(responseText) as { ok: boolean; entries?: ServerMobileSyncEntry[]; error?: string })
+      : { ok: false };
+  } catch {
+    const preview = responseText.trim().slice(0, 80);
+    throw new Error(
+      `Mobile sync server at ${url} did not return JSON.${preview ? ` Response started with: ${preview}` : ""}`
+    );
+  }
+  if (!response.ok || !body.ok) throw new Error(body.error ?? "Could not sync server records.");
+
+  let imported = 0;
+  for (const entry of body.entries ?? []) {
+    if (!entry.uid || !entry.caseEntry) continue;
+    const updatedAt = entry.updatedAt ?? entry.completedAt ?? entry.createdAt ?? new Date().toISOString();
+    await saveCaseEntry({
+      uid: entry.uid,
+      userId: entry.userId ?? user.userId,
+      caseEntry: entry.caseEntry,
+      whoVaData: entry.whoVaData ?? {},
+      updatedAt
+    });
+    imported += 1;
+
+    if (entry.status === "completed" && entry.submission) {
+      await saveCompletedSubmission({
+        id: `server-${entry.uid}`,
+        completedAt: entry.completedAt ?? updatedAt,
+        result: createSyncedSubmissionResult(entry),
+        syncStatus: "pushed",
+        userId: entry.userId ?? user.userId,
+        authKey: user.authKey,
+        caseEntry: entry.caseEntry
+      });
+    }
+  }
+  return imported;
+}
 
 export async function loginOnlineUser(data: LoginPayload, apiBaseUrl: string): Promise<RegisteredUser> {
   const url = `${normalizeApiBaseUrl(apiBaseUrl).replace(/\/$/u, "")}/api/login`;
@@ -281,7 +360,7 @@ export async function loginOnlineUser(data: LoginPayload, apiBaseUrl: string): P
       headers: { "content-type": "application/json" },
       body: JSON.stringify(data)
     });
-  } catch (error) {
+  } catch (_error) {
     try {
       return await loginCachedUser(data);
     } catch (localError) {
@@ -294,7 +373,9 @@ export async function loginOnlineUser(data: LoginPayload, apiBaseUrl: string): P
   const responseText = await response.text();
   let body: { ok: boolean; user?: RegisteredUser; error?: string };
   try {
-    body = responseText ? (JSON.parse(responseText) as { ok: boolean; user?: RegisteredUser; error?: string }) : { ok: false };
+    body = responseText
+      ? (JSON.parse(responseText) as { ok: boolean; user?: RegisteredUser; error?: string })
+      : { ok: false };
   } catch {
     const preview = responseText.trim().slice(0, 80);
     throw new Error(
@@ -389,7 +470,9 @@ export async function listCompletedSubmissions(): Promise<CompletedSubmission[]>
     syncStatus: row.sync_status,
     ...(row.user_id ? { userId: row.user_id } : {}),
     ...(row.auth_key ? { authKey: row.auth_key } : {}),
-    ...(row.case_entry ? { caseEntry: decodeJson<CaseEntryData>(row.case_entry, `case entry ${row.id}`) } : {})
+    ...(row.case_entry
+      ? { caseEntry: decodeJson<CaseEntryData>(row.case_entry, `case entry ${row.id}`) }
+      : {})
   }));
 }
 

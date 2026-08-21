@@ -526,13 +526,7 @@ export function createWhoVaForm(
         <Text style={styles.progress}>
           {messages.sectionProgress(snapshot.currentSectionIndex + 1, snapshot.visibleSectionCount)}
         </Text>
-        <ScrollView
-          horizontal
-          keyboardShouldPersistTaps="handled"
-          showsHorizontalScrollIndicator={false}
-          style={styles.sectionSwitcher}
-          contentContainerStyle={styles.sectionSwitcherContent}
-        >
+        <View style={styles.sectionSwitcher}>
           {snapshot.visibleSections.map((section, index) => {
             const isActive = section.name === snapshot.currentSection.name;
             return (
@@ -549,7 +543,7 @@ export function createWhoVaForm(
               </Pressable>
             );
           })}
-        </ScrollView>
+        </View>
         <Text style={styles.sectionTitle}>
           {localized(snapshot.currentSection.label, locale, snapshot.currentSection.name)}
         </Text>

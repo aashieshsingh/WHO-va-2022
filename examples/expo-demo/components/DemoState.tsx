@@ -23,6 +23,7 @@ import {
   saveCaseEntry,
   saveCompletedSubmission,
   saveDraft,
+  syncServerDataForUser,
   validateCaseEntryData,
   type CaseEntryData,
   type CompletedSubmission,
@@ -181,7 +182,18 @@ export function DemoStateProvider({ children }: { children: ReactNode }) {
         const user = await loginOnlineUser(payload, targetApiBaseUrl);
         setServerApiBaseUrl(targetApiBaseUrl);
         setCurrentUser(user);
-        setLastUpdate(`Signed in as ${user.name}`);
+        try {
+          const importedServerRecords = await syncServerDataForUser(user, targetApiBaseUrl);
+          setLastUpdate(
+            `Signed in as ${user.name}${
+              importedServerRecords
+                ? `. Imported ${importedServerRecords} server records.`
+                : ". No server records found."
+            }`
+          );
+        } catch (error) {
+          setLastUpdate(`Signed in as ${user.name}. Server data sync failed: ${(error as Error).message}`);
+        }
         await refreshLocalData();
       },
       async logout() {

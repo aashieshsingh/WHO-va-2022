@@ -106,8 +106,13 @@ export const formStyles = {
     { padding: "formPadding", maxWidth: "formMaxWidth" }
   ),
   progress: withWebTheme({ color: "#47625b", marginBottom: 6, fontSize: 13 }, { color: "muted" }),
-  sectionSwitcher: { marginBottom: 12 },
-  sectionSwitcherContent: { columnGap: 8, paddingVertical: 2 },
+  sectionSwitcher: {
+    columnGap: 8,
+    flexDirection: "row" as const,
+    flexWrap: "wrap" as const,
+    marginBottom: 12,
+    rowGap: 8
+  },
   sectionButton: withWebTheme(
     {
       alignItems: "center" as const,

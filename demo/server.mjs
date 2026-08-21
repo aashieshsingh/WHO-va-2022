@@ -181,7 +181,8 @@ async function loginUser(payload) {
     [normalizedEmail, identifier]
   );
   const saved = result.rows[0];
-  if (!saved || !verifyPassword(password, saved.password_hash)) throw badRequest("Invalid email/user ID or password");
+  if (!saved || !verifyPassword(password, saved.password_hash))
+    throw badRequest("Invalid email/user ID or password");
   return {
     userId: saved.user_id,
     name: saved.name,
@@ -189,8 +190,8 @@ async function loginUser(payload) {
     role: saved.role,
     partnerSite: saved.partner_site,
     siteAssigned: saved.site_assigned,
-      authKey: saved.auth_key,
-      createdAt: saved.created_at
+    authKey: saved.auth_key,
+    createdAt: saved.created_at
   };
 }
 const characterOnlyCaseEntryFields = {
@@ -315,14 +316,14 @@ async function listFormEntries() {
   }));
 }
 
-
 async function verifyUserAuthKey(userId, authKey) {
-  if (!userId || !authKey) throw badRequest("userId and authKey are required for authenticated form entry pushes");
+  if (!userId || !authKey)
+    throw badRequest("userId and authKey are required for authenticated form entry pushes");
   await ensureUsersTable();
-  const result = await pool.query(
-    "select 1 from who_va_users where user_id = $1 and auth_key = $2",
-    [userId, authKey]
-  );
+  const result = await pool.query("select 1 from who_va_users where user_id = $1 and auth_key = $2", [
+    userId,
+    authKey
+  ]);
   if (!result.rows[0]) throw badRequest("Invalid user auth key");
 }
 async function loadUserByAuthKey(userId, authKey) {
@@ -348,6 +349,47 @@ async function loadUserByAuthKey(userId, authKey) {
     authKey: saved.auth_key,
     createdAt: saved.created_at
   };
+}
+
+async function listMobileSyncEntries(userId, authKey) {
+  const requester = await loadUserByAuthKey(userId, authKey);
+  const params = requester.role === "admin" ? [] : [requester.userId];
+  const userFilter = requester.role === "admin" ? "" : "where f.user_id = $1";
+  const result = await pool.query(
+    `
+      select
+        f.id,
+        f.uid,
+        f.user_id,
+        f.status,
+        f.created_at,
+        f.updated_at,
+        f.completed_at,
+        f.case_entry,
+        f.who_va_prefill,
+        f.submission,
+        f.validation_issues
+      from who_va_form_entries f
+      ${userFilter}
+      order by f.updated_at desc
+      limit 500
+    `,
+    params
+  );
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    uid: row.uid,
+    userId: row.user_id,
+    status: row.status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    completedAt: row.completed_at,
+    caseEntry: row.case_entry,
+    whoVaData: row.who_va_prefill,
+    submission: row.submission,
+    validationIssues: row.validation_issues ?? []
+  }));
 }
 
 async function listUserDashboard(userId, authKey) {
@@ -432,7 +474,8 @@ async function saveFormEntry(payload) {
   const userId = typeof payload.userId === "string" && payload.userId.trim() ? payload.userId.trim() : null;
   const requestedStatus = typeof payload.status === "string" ? payload.status.trim() : "case-entry";
   const status = formEntryStatuses.has(requestedStatus) ? requestedStatus : "case-entry";
-  const authKey = typeof payload.authKey === "string" && payload.authKey.trim() ? payload.authKey.trim() : null;
+  const authKey =
+    typeof payload.authKey === "string" && payload.authKey.trim() ? payload.authKey.trim() : null;
   if (authKey || status === "completed") await verifyUserAuthKey(userId, authKey);
   const caseEntry = payload.caseEntry && typeof payload.caseEntry === "object" ? payload.caseEntry : {};
   validateCaseEntry(caseEntry);
@@ -594,8 +637,20 @@ const server = createHttpServer(async (request, response) => {
     }
 
     if (url.pathname === "/api/dashboard" && request.method === "GET") {
-      const dashboard = await listUserDashboard(url.searchParams.get("userId"), url.searchParams.get("authKey"));
+      const dashboard = await listUserDashboard(
+        url.searchParams.get("userId"),
+        url.searchParams.get("authKey")
+      );
       sendJson(response, 200, { ok: true, ...dashboard });
+      return;
+    }
+
+    if (url.pathname === "/api/mobile-sync" && request.method === "GET") {
+      const entries = await listMobileSyncEntries(
+        url.searchParams.get("userId"),
+        url.searchParams.get("authKey")
+      );
+      sendJson(response, 200, { ok: true, entries });
       return;
     }
 

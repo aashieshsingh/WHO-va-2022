@@ -7,7 +7,8 @@ import { useDemoState } from "../components/DemoState";
 
 export default function HomeRoute() {
   const router = useRouter();
-  const { cases, completed, currentUser, drafts, isDatabaseReady, latestDraft, login, logout } = useDemoState();
+  const { cases, completed, currentUser, drafts, isDatabaseReady, latestDraft, login, logout } =
+    useDemoState();
   const [apiBaseUrl, setApiBaseUrl] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -19,7 +20,8 @@ export default function HomeRoute() {
         <ScreenScroll>
           <Text style={styles.screenTitle}>Login</Text>
           <Text style={styles.screenCopy}>
-            First login needs the server. After the auth key is cached, the same email and password can open the app offline.
+            First login needs the server. After the auth key is cached, the same login and password can open
+            the app offline.
           </Text>
           <View style={styles.formPanel}>
             <Text style={styles.fieldLabel}>Server URL</Text>
@@ -31,10 +33,10 @@ export default function HomeRoute() {
               style={styles.textInput}
               value={apiBaseUrl}
             />
-            <Text style={styles.fieldLabel}>Email</Text>
+            <Text style={styles.fieldLabel}>Email or user ID</Text>
             <TextInput
               autoCapitalize="none"
-              keyboardType="email-address"
+              keyboardType="default"
               onChangeText={setEmail}
               style={styles.textInput}
               value={email}
@@ -67,7 +69,9 @@ export default function HomeRoute() {
         <Text style={styles.screenCopy}>
           Signed in as {currentUser.name}. Local key: {currentUser.authKey}
         </Text>
-        <Text style={styles.screenCopy}>Case entries, drafts, and completed submissions are stored in SQLite.</Text>
+        <Text style={styles.screenCopy}>
+          Case entries, drafts, and completed submissions are stored in SQLite.
+        </Text>
         <View style={styles.actionStack}>
           <ActionButton
             disabled={!isDatabaseReady}

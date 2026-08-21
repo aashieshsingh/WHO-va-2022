@@ -130,6 +130,10 @@ export async function loginOnlineUser(_data: LoginPayload, _apiBaseUrl: string):
   throw new Error("Online login is not available in the web storage demo.");
 }
 
+export async function syncServerDataForUser(_user: RegisteredUser, _apiBaseUrl: string): Promise<number> {
+  return 0;
+}
+
 export async function loadCurrentUser(): Promise<RegisteredUser | undefined> {
   return undefined;
 }
