@@ -87,6 +87,34 @@ interface StoredCaseEntry {
   updatedAt: string;
 }
 
+type DashboardFormStatus = "pending" | "drafted" | "final";
+
+interface DashboardFormEntry {
+  id: number;
+  uid: string;
+  status: DashboardFormStatus;
+  sourceStatus: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  draftId?: string | null;
+  draftSection?: string | null;
+  draftUpdatedAt?: string | null;
+  caseEntry?: CaseEntryData;
+  whoVaData?: Record<string, unknown>;
+}
+
+interface DashboardUserGroup {
+  userId: string;
+  name: string;
+  email: string;
+  role: string;
+  partnerSite: string;
+  siteAssigned: string;
+  counts: Record<DashboardFormStatus, number>;
+  forms: DashboardFormEntry[];
+}
+
 defineWhoVaElement();
 
 const LOCAL_CASE_ENTRIES_KEY = "who-va-demo-case-entries";
@@ -119,6 +147,14 @@ const adminShell = document.querySelector<HTMLElement>("#admin-shell");
 const adminSummary = document.querySelector<HTMLElement>("#admin-summary");
 const adminRegisterUser = document.querySelector<HTMLButtonElement>("#admin-register-user");
 const adminOpenDataEntry = document.querySelector<HTMLButtonElement>("#admin-open-data-entry");
+const adminOpenDashboard = document.querySelector<HTMLButtonElement>("#admin-open-dashboard");
+const showDashboard = document.querySelector<HTMLButtonElement>("#show-dashboard");
+const dashboardShell = document.querySelector<HTMLElement>("#dashboard-shell");
+const dashboardSummary = document.querySelector<HTMLElement>("#dashboard-summary");
+const dashboardTotals = document.querySelector<HTMLElement>("#dashboard-totals");
+const dashboardUsers = document.querySelector<HTMLElement>("#dashboard-users");
+const dashboardOutput = document.querySelector<HTMLOutputElement>("#dashboard-output");
+const refreshDashboard = document.querySelector<HTMLButtonElement>("#refresh-dashboard");
 const registrationShell = document.querySelector<HTMLElement>("#registration-shell");
 const registrationForm = document.querySelector<HTMLFormElement>("#registration-form");
 const registrationOutput = document.querySelector<HTMLOutputElement>("#registration-output");
@@ -151,10 +187,13 @@ const createEntryUid = () => {
   return `VA-${Date.now().toString(36).toUpperCase()}-${randomPart.toUpperCase()}`;
 };
 
-const setVisibleStep = (step: "login" | "registration" | "admin" | "picker" | "entry" | "instrument") => {
+const setVisibleStep = (
+  step: "login" | "registration" | "admin" | "dashboard" | "picker" | "entry" | "instrument"
+) => {
   if (loginShell) loginShell.hidden = step !== "login";
   if (registrationShell) registrationShell.hidden = step !== "registration";
   if (adminShell) adminShell.hidden = step !== "admin";
+  if (dashboardShell) dashboardShell.hidden = step !== "dashboard";
   if (casePickerShell) casePickerShell.hidden = step !== "picker";
   if (entryShell) entryShell.hidden = step !== "entry";
   if (whoVaShell) whoVaShell.hidden = step !== "instrument";
@@ -166,6 +205,7 @@ const hasAdminAccess = () => currentUser?.role === "admin";
 const updateAccessControls = () => {
   if (showLogin) showLogin.hidden = currentUser != null;
   if (showRegistration) showRegistration.hidden = currentUser != null && !hasAdminAccess();
+  if (showDashboard) showDashboard.hidden = currentUser == null;
   if (newCaseEntry) newCaseEntry.hidden = !hasDataEntryAccess();
   for (const button of startSelectedEntries) {
     button.hidden = !hasDataEntryAccess();
@@ -442,9 +482,7 @@ const registerUser = async (payload: RegisterUserPayload): Promise<RegisteredUse
 const readLoginData = (sourceForm: HTMLFormElement): LoginPayload => {
   const formData = new FormData(sourceForm);
   return {
-    email: String(formData.get("email") ?? "")
-      .trim()
-      .toLowerCase(),
+    email: String(formData.get("email") ?? "").trim(),
     password: String(formData.get("password") ?? "")
   };
 };
@@ -502,6 +540,13 @@ const applyCaseEntryToInstrument = async (caseEntry: CaseEntryData, whoVaData: R
 };
 
 const formEntriesApiUrl = () => "/api/form-entries";
+
+const dashboardApiUrl = () => {
+  const params = new URLSearchParams();
+  if (currentUser?.userId) params.set("userId", currentUser.userId);
+  if (currentUser?.authKey) params.set("authKey", currentUser.authKey);
+  return `/api/dashboard?${params.toString()}`;
+};
 
 const draftsApiUrl = (id?: string) => {
   const base = formEntriesApiUrl().replace(/\/form-entries$/u, "/drafts");
@@ -591,6 +636,188 @@ const saveFormEntry = async (payload: SaveFormEntryPayload): Promise<SavedFormEn
   return body.saved;
 };
 
+const showDashboardOutput = (value: unknown) => {
+  if (!dashboardOutput) return;
+  dashboardOutput.hidden = false;
+  dashboardOutput.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+};
+
+const formatDateTime = (value?: string | null) => {
+  if (!value) return "Not yet";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+};
+
+const dashboardStatusLabel = (status: DashboardFormStatus) => {
+  if (status === "final") return "Final";
+  if (status === "drafted") return "Drafted";
+  return "Pending";
+};
+
+const dashboardActionLabel = (status: DashboardFormStatus) => {
+  if (status === "final") return "Update form";
+  if (status === "drafted") return "Complete task";
+  return "Start form";
+};
+
+const createStatusTotal = (label: string, value: number) => {
+  const item = document.createElement("div");
+  item.className = "dashboard-total";
+  const number = document.createElement("strong");
+  number.textContent = String(value);
+  const text = document.createElement("span");
+  text.textContent = label;
+  item.append(number, text);
+  return item;
+};
+
+const createStatusPill = (label: string, value: number) => {
+  const item = document.createElement("span");
+  item.className = "dashboard-pill";
+  item.textContent = `${label}: ${value}`;
+  return item;
+};
+
+const openDashboardForm = async (entry: DashboardFormEntry) => {
+  if (!requireDataEntryAccess()) return;
+  if (!entry.caseEntry) {
+    showDashboardOutput(`Case entry data is missing for ${entry.uid}.`);
+    return;
+  }
+  const whoVaData = entry.whoVaData ?? createWhoVaDataFromCaseEntry(entry.caseEntry);
+  fillCaseEntryForm(entry.caseEntry);
+  await applyCaseEntryToInstrument(entry.caseEntry, whoVaData);
+};
+
+const renderDashboard = (users: DashboardUserGroup[]) => {
+  if (!dashboardTotals || !dashboardUsers) return;
+  const totals = users.reduce(
+    (accumulator, user) => {
+      accumulator.pending += user.counts.pending;
+      accumulator.drafted += user.counts.drafted;
+      accumulator.final += user.counts.final;
+      return accumulator;
+    },
+    { pending: 0, drafted: 0, final: 0 }
+  );
+  const totalForms = totals.pending + totals.drafted + totals.final;
+  if (dashboardSummary) {
+    dashboardSummary.textContent =
+      currentUser?.role === "admin"
+        ? `${totalForms} forms across ${users.length} users.`
+        : `${totalForms} forms assigned to ${currentUser?.name ?? "this user"}.`;
+  }
+
+  dashboardTotals.replaceChildren(
+    createStatusTotal("Pending", totals.pending),
+    createStatusTotal("Drafted", totals.drafted),
+    createStatusTotal("Final", totals.final)
+  );
+  dashboardUsers.replaceChildren();
+
+  if (users.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "dashboard-empty";
+    empty.textContent = "No WHO VA forms found for this user.";
+    dashboardUsers.append(empty);
+    return;
+  }
+
+  for (const user of users) {
+    const section = document.createElement("section");
+    section.className = "dashboard-user";
+
+    const header = document.createElement("div");
+    header.className = "dashboard-user__header";
+    const title = document.createElement("h3");
+    title.textContent = user.email ? `${user.name} (${user.email})` : user.name;
+    const meta = document.createElement("p");
+    meta.textContent = [user.role, user.partnerSite, user.siteAssigned].filter(Boolean).join(" | ");
+    header.append(title, meta);
+
+    const counts = document.createElement("div");
+    counts.className = "dashboard-user__counts";
+    counts.append(
+      createStatusPill("Pending", user.counts.pending),
+      createStatusPill("Drafted", user.counts.drafted),
+      createStatusPill("Final", user.counts.final)
+    );
+
+    const table = document.createElement("table");
+    table.className = "dashboard-table";
+    table.innerHTML = `
+      <thead>
+        <tr>
+          <th>UID</th>
+          <th>Deceased</th>
+          <th>Status</th>
+          <th>Last update</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+    `;
+    const body = document.createElement("tbody");
+    for (const formEntry of user.forms) {
+      const row = document.createElement("tr");
+      const uid = document.createElement("td");
+      uid.textContent = formEntry.uid;
+      const deceased = document.createElement("td");
+      deceased.textContent = formEntry.caseEntry?.deceasedFullName ?? "Not recorded";
+      const status = document.createElement("td");
+      const statusBadge = document.createElement("span");
+      statusBadge.className = `dashboard-status dashboard-status--${formEntry.status}`;
+      statusBadge.textContent = dashboardStatusLabel(formEntry.status);
+      status.append(statusBadge);
+      const updated = document.createElement("td");
+      updated.textContent = formatDateTime(
+        formEntry.status === "final" ? formEntry.completedAt : formEntry.draftUpdatedAt ?? formEntry.updatedAt
+      );
+      const action = document.createElement("td");
+      const actionButton = document.createElement("button");
+      actionButton.type = "button";
+      actionButton.textContent = dashboardActionLabel(formEntry.status);
+      actionButton.addEventListener("click", () => {
+        void openDashboardForm(formEntry).catch((error: unknown) => {
+          showDashboardOutput(error instanceof Error ? error.message : String(error));
+        });
+      });
+      action.append(actionButton);
+      row.append(uid, deceased, status, updated, action);
+      body.append(row);
+    }
+    table.append(body);
+    section.append(header, counts, table);
+    dashboardUsers.append(section);
+  }
+};
+
+const refreshUserDashboard = async () => {
+  if (!currentUser) {
+    showLoginOutput("Login before opening the dashboard.");
+    setVisibleStep("login");
+    return;
+  }
+  if (dashboardOutput) dashboardOutput.hidden = true;
+  if (dashboardUsers) {
+    dashboardUsers.replaceChildren();
+    const loading = document.createElement("p");
+    loading.className = "dashboard-empty";
+    loading.textContent = "Loading dashboard...";
+    dashboardUsers.append(loading);
+  }
+  try {
+    const response = await fetch(dashboardApiUrl());
+    const body = await readJsonResponse<{ ok: boolean; users?: DashboardUserGroup[]; error?: string }>(response);
+    if (!response.ok || !body.ok) {
+      throw new Error(body.error ?? `Dashboard could not be loaded. Status: ${response.status}.`);
+    }
+    renderDashboard(body.users ?? []);
+  } catch (error) {
+    showDashboardOutput(error instanceof Error ? error.message : String(error));
+  }
+};
+
 showLogin?.addEventListener("click", () => {
   setVisibleStep("login");
   loginShell?.scrollIntoView({ block: "start" });
@@ -607,6 +834,22 @@ adminOpenDataEntry?.addEventListener("click", () => {
   void refreshDeceasedDropdown();
   setVisibleStep("picker");
   casePickerShell?.scrollIntoView({ block: "start" });
+});
+
+adminOpenDashboard?.addEventListener("click", () => {
+  setVisibleStep("dashboard");
+  dashboardShell?.scrollIntoView({ block: "start" });
+  void refreshUserDashboard();
+});
+
+showDashboard?.addEventListener("click", () => {
+  setVisibleStep("dashboard");
+  dashboardShell?.scrollIntoView({ block: "start" });
+  void refreshUserDashboard();
+});
+
+refreshDashboard?.addEventListener("click", () => {
+  void refreshUserDashboard();
 });
 
 loginForm?.addEventListener("submit", (event) => {
@@ -724,6 +967,7 @@ entryForm?.addEventListener("submit", (event) => {
       });
 
       rememberCaseEntry(entry, whoVaData);
+      void refreshUserDashboard();
       window.alert("Case data entry submitted successfully.");
       renderDeceasedDropdown();
       if (deceasedEntrySelect) deceasedEntrySelect.value = entry.uid;
@@ -781,6 +1025,7 @@ form?.addEventListener("who-va-complete", (event) => {
       });
       window.alert("WHO VA form submitted successfully.");
       showEntryOutput({ saved, completed: true });
+      void refreshUserDashboard();
     } catch (error) {
       showEntryOutput(error instanceof Error ? error.message : String(error));
     }

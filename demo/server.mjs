@@ -167,21 +167,21 @@ async function registerUser(payload) {
 }
 async function loginUser(payload) {
   await ensureUsersTable();
-  const email = typeof payload.email === "string" ? payload.email.trim().toLowerCase() : "";
-  const role = typeof payload.role === "string" ? payload.role.trim() : "";
+  const identifier = typeof payload.email === "string" ? payload.email.trim() : "";
+  const normalizedEmail = identifier.toLowerCase();
   const password = typeof payload.password === "string" ? payload.password : "";
-  if (!emailPattern.test(email) || !password) throw badRequest("Invalid email or password");
+  if (!identifier || !password) throw badRequest("Email or user ID and password are required");
 
   const result = await pool.query(
     `
       select user_id, name, email, role, partner_site, site_assigned, password_hash, auth_key, created_at
       from who_va_users
-      where email = $1
+      where email = $1 or user_id = $2
     `,
-    [email]
+    [normalizedEmail, identifier]
   );
   const saved = result.rows[0];
-  if (!saved || !verifyPassword(password, saved.password_hash)) throw badRequest("Invalid email or password");
+  if (!saved || !verifyPassword(password, saved.password_hash)) throw badRequest("Invalid email/user ID or password");
   return {
     userId: saved.user_id,
     name: saved.name,
@@ -325,6 +325,102 @@ async function verifyUserAuthKey(userId, authKey) {
   );
   if (!result.rows[0]) throw badRequest("Invalid user auth key");
 }
+async function loadUserByAuthKey(userId, authKey) {
+  if (!userId || !authKey) throw badRequest("userId and authKey are required");
+  await ensureUsersTable();
+  const result = await pool.query(
+    `
+      select user_id, name, email, role, partner_site, site_assigned, auth_key, created_at
+      from who_va_users
+      where user_id = $1 and auth_key = $2
+    `,
+    [userId, authKey]
+  );
+  const saved = result.rows[0];
+  if (!saved) throw badRequest("Invalid user auth key");
+  return {
+    userId: saved.user_id,
+    name: saved.name,
+    email: saved.email,
+    role: saved.role,
+    partnerSite: saved.partner_site,
+    siteAssigned: saved.site_assigned,
+    authKey: saved.auth_key,
+    createdAt: saved.created_at
+  };
+}
+
+async function listUserDashboard(userId, authKey) {
+  await ensureDraftTable();
+  const requester = await loadUserByAuthKey(userId, authKey);
+  const params = requester.role === "admin" ? [] : [requester.userId];
+  const userFilter = requester.role === "admin" ? "" : "where f.user_id = $1";
+  const result = await pool.query(
+    `
+      select
+        f.id,
+        f.uid,
+        f.user_id,
+        f.status,
+        f.created_at,
+        f.updated_at,
+        f.completed_at,
+        f.case_entry,
+        f.who_va_prefill,
+        u.name as user_name,
+        u.email as user_email,
+        u.role as user_role,
+        u.partner_site,
+        u.site_assigned,
+        d.id as draft_id,
+        d.current_section as draft_section,
+        d.updated_at as draft_updated_at
+      from who_va_form_entries f
+      left join who_va_users u on u.user_id = f.user_id
+      left join who_va_drafts d on d.id = f.uid
+      ${userFilter}
+      order by coalesce(f.completed_at, d.updated_at, f.updated_at) desc
+      limit 250
+    `,
+    params
+  );
+
+  const usersById = new Map();
+  for (const row of result.rows) {
+    const dashboardStatus =
+      row.status === "completed" || row.completed_at ? "final" : row.draft_id ? "drafted" : "pending";
+    const ownerId = row.user_id ?? "unassigned";
+    const owner = usersById.get(ownerId) ?? {
+      userId: ownerId,
+      name: row.user_name ?? "Unassigned",
+      email: row.user_email ?? "",
+      role: row.user_role ?? "",
+      partnerSite: row.partner_site ?? "",
+      siteAssigned: row.site_assigned ?? "",
+      counts: { pending: 0, drafted: 0, final: 0 },
+      forms: []
+    };
+    owner.counts[dashboardStatus] += 1;
+    owner.forms.push({
+      id: row.id,
+      uid: row.uid,
+      status: dashboardStatus,
+      sourceStatus: row.status,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      completedAt: row.completed_at,
+      draftId: row.draft_id,
+      draftSection: row.draft_section,
+      draftUpdatedAt: row.draft_updated_at,
+      caseEntry: row.case_entry,
+      whoVaData: row.who_va_prefill
+    });
+    usersById.set(ownerId, owner);
+  }
+
+  return { requester, users: [...usersById.values()] };
+}
+
 async function saveFormEntry(payload) {
   const uid = typeof payload.uid === "string" ? payload.uid.trim() : "";
   if (!uid) {
@@ -468,6 +564,12 @@ const server = createHttpServer(async (request, response) => {
     if (url.pathname === "/api/form-entries" && request.method === "POST") {
       const saved = await saveFormEntry(await readJsonBody(request));
       sendJson(response, 200, { ok: true, saved });
+      return;
+    }
+
+    if (url.pathname === "/api/dashboard" && request.method === "GET") {
+      const dashboard = await listUserDashboard(url.searchParams.get("userId"), url.searchParams.get("authKey"));
+      sendJson(response, 200, { ok: true, ...dashboard });
       return;
     }
 

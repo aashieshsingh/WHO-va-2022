@@ -15,6 +15,7 @@
       <div class="header-actions">
         <button id="show-login" type="button">Login</button>
         <button id="show-registration" type="button">Register user</button>
+        <button id="show-dashboard" type="button" hidden>Dashboard</button>
         <button id="new-case-entry" type="button">Case data entry</button>
         <button id="header-start-selected-entry" class="start-selected-entry" type="button" disabled>
           Fill WHO VA 2022 Instrument
@@ -38,8 +39,8 @@
 
           <div class="entry-grid">
             <label>
-              <span>Email</span>
-              <input name="email" type="email" autocomplete="email" required />
+              <span>Email or user ID</span>
+              <input name="email" type="text" autocomplete="username" required />
             </label>
             <label>
               <span>Password</span>
@@ -65,8 +66,21 @@
           <div class="entry-actions">
             <button id="admin-register-user" type="button">Register another user</button>
             <button id="admin-open-data-entry" type="button">Open data entry</button>
+            <button id="admin-open-dashboard" type="button">Open dashboard</button>
           </div>
         </div>
+      </section>
+      <section id="dashboard-shell" class="dashboard-shell" aria-labelledby="dashboard-title" hidden>
+        <div class="dashboard-header">
+          <div>
+            <h2 id="dashboard-title">WHO VA forms dashboard</h2>
+            <p id="dashboard-summary">Forms grouped user wise with pending, drafted, and final status.</p>
+          </div>
+          <button id="refresh-dashboard" type="button">Refresh</button>
+        </div>
+        <div id="dashboard-totals" class="dashboard-totals" aria-label="Form status totals"></div>
+        <div id="dashboard-users" class="dashboard-users"></div>
+        <output id="dashboard-output" class="entry-output" hidden></output>
       </section>
       <section id="registration-shell" class="entry-shell" aria-labelledby="registration-title">
         <form id="registration-form" class="entry-form">
