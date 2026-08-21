@@ -247,6 +247,7 @@ export interface SessionSnapshot {
   currentSection: InstrumentSection;
   currentSectionIndex: number;
   visibleSectionCount: number;
+  visibleSections: InstrumentSection[];
   questions: InstrumentQuestion[];
   lockedQuestionNames: string[];
   issues: ValidationIssue[];

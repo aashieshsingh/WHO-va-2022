@@ -11,10 +11,11 @@ import type {
 import { WhoVaForm } from "@drguptavivek/who-2022-va/native";
 
 import { DemoChrome, EmptyState, styles } from "./DemoLayout";
-import { countAnswers, useDemoState } from "./DemoState";
+import { countAnswers, useDemoState, type CaseEntryData } from "./DemoState";
 import { useExpoWhoVaPlatformServices } from "./ExpoPlatformServices";
 
 export function FormRouteScreen({
+  caseEntry,
   draft,
   draftId,
   emptyMessage,
@@ -23,6 +24,7 @@ export function FormRouteScreen({
   lockedQuestionNames,
   title
 }: {
+  caseEntry?: CaseEntryData;
   draft?: WhoVaDraft;
   draftId?: string;
   emptyMessage?: string;
@@ -47,20 +49,17 @@ export function FormRouteScreen({
     },
     [router, setLastUpdate]
   );
-  const saveCurrentDraft = useCallback(
-    async () => {
-      if (!draftControllerRef.current) {
-        setLastUpdate("Draft is not ready yet");
-        return;
-      }
-      try {
-        await draftControllerRef.current.saveDraft();
-      } catch (error) {
-        setLastUpdate(`Draft save failed: ${(error as Error).message}`);
-      }
-    },
-    [setLastUpdate]
-  );
+  const saveCurrentDraft = useCallback(async () => {
+    if (!draftControllerRef.current) {
+      setLastUpdate("Draft is not ready yet");
+      return;
+    }
+    try {
+      await draftControllerRef.current.saveDraft();
+    } catch (error) {
+      setLastUpdate(`Draft save failed: ${(error as Error).message}`);
+    }
+  }, [setLastUpdate]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextState) => {
@@ -86,7 +85,11 @@ export function FormRouteScreen({
             <Text style={styles.backButtonText}>Home</Text>
           </Pressable>
           <Text style={styles.formToolbarTitle}>{title}</Text>
-          <Pressable accessibilityRole="button" onPress={() => void saveCurrentDraft()} style={styles.backButton}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => void saveCurrentDraft()}
+            style={styles.backButton}
+          >
             <Text style={styles.backButtonText}>Save</Text>
           </Pressable>
         </View>
@@ -109,7 +112,11 @@ export function FormRouteScreen({
             <Text style={styles.backButtonText}>Home</Text>
           </Pressable>
           <Text style={styles.formToolbarTitle}>{title}</Text>
-          <Pressable accessibilityRole="button" onPress={() => void saveCurrentDraft()} style={styles.backButton}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => void saveCurrentDraft()}
+            style={styles.backButton}
+          >
             <Text style={styles.backButtonText}>Save</Text>
           </Pressable>
         </View>
@@ -125,7 +132,7 @@ export function FormRouteScreen({
             setLastUpdate(`${Object.keys(data).length} draft answers captured`);
           }}
           onComplete={(result: SubmissionValidationResult) => {
-            addCompleted(result);
+            addCompleted(result, caseEntry);
             router.push("/completed");
           }}
           onDraftController={(controller) => {

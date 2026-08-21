@@ -141,6 +141,17 @@ export const styles = StyleSheet.create({
     padding: 14,
     width: "100%"
   },
+  dashboardRowActions: {
+    alignItems: "flex-end",
+    marginLeft: 12,
+    rowGap: 8
+  },
+  dashboardTotals: {
+    columnGap: 8,
+    flexDirection: "row",
+    marginTop: 18,
+    width: "100%"
+  },
   emptyState: {
     alignItems: "center",
     borderColor: "#dbe7e3",
@@ -217,6 +228,12 @@ export const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "800",
     marginLeft: 12
+  },
+  listItemActionLabel: {
+    color: "#008a6a",
+    fontSize: 12,
+    fontWeight: "800",
+    marginTop: 6
   },
   listItemId: {
     color: "#6b7d78",

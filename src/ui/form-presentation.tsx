@@ -106,6 +106,31 @@ export const formStyles = {
     { padding: "formPadding", maxWidth: "formMaxWidth" }
   ),
   progress: withWebTheme({ color: "#47625b", marginBottom: 6, fontSize: 13 }, { color: "muted" }),
+  sectionSwitcher: { marginBottom: 12 },
+  sectionSwitcherContent: { columnGap: 8, paddingVertical: 2 },
+  sectionButton: withWebTheme(
+    {
+      alignItems: "center" as const,
+      backgroundColor: "#ffffff",
+      borderColor: "#dce6e1",
+      borderRadius: 8,
+      borderWidth: 1,
+      justifyContent: "center" as const,
+      minHeight: 38,
+      paddingHorizontal: 12,
+      paddingVertical: 8
+    },
+    { backgroundColor: "surface", borderColor: "border" }
+  ),
+  sectionButtonActive: withWebTheme(
+    { backgroundColor: "#12372d", borderColor: "#12372d" },
+    { backgroundColor: "brandDeep", borderColor: "brandDeep" }
+  ),
+  sectionButtonText: withWebTheme(
+    { color: "#183d33", fontSize: 13, fontWeight: "700" as const },
+    { color: "ink" }
+  ),
+  sectionButtonTextActive: { color: "#ffffff" },
   sectionTitle: withWebTheme(
     { color: "#12372d", fontSize: 24, fontWeight: "700" as const, marginBottom: 18 },
     { color: "brandDeep" }

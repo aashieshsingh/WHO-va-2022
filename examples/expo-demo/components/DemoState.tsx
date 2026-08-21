@@ -1,7 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { createWhoVaInitialDataFromPrefill } from "@drguptavivek/who-2022-va";
-import type { SubmissionData, SubmissionValidationResult, WhoVaDraft, WhoVaDraftStore } from "@drguptavivek/who-2022-va";
+import type {
+  SubmissionData,
+  SubmissionValidationResult,
+  WhoVaDraft,
+  WhoVaDraftStore
+} from "@drguptavivek/who-2022-va";
 
 import {
   createEntryUid,
@@ -39,12 +44,12 @@ interface DemoState {
   lastUpdate: string;
   newFormKey: number;
   users: RegisteredUser[];
-  addCompleted(result: SubmissionValidationResult): void;
+  addCompleted(result: SubmissionValidationResult, caseEntry?: CaseEntryData): void;
   beginNewInterview(): void;
   getDraft(id: string | undefined): WhoVaDraft | undefined;
   login(payload: LoginPayload, apiBaseUrl?: string): Promise<void>;
   logout(): Promise<void>;
-  pushToServer(apiBaseUrl?: string): Promise<PushResult>;
+  pushToServer(apiBaseUrl?: string, submissionIds?: string[]): Promise<PushResult>;
   saveCase(caseEntry: CaseEntryData): Promise<StoredCaseEntry>;
   setLastUpdate(message: string): void;
 }
@@ -133,17 +138,21 @@ export function DemoStateProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<DemoState>(
     () => ({
-      addCompleted(result) {
+      addCompleted(result, caseEntry) {
         setLastUpdate(`Submission ready with ${Object.keys(result.data).length} answers`);
-        const matchingCase = cases.find((entry) => entry.uid === result.data.__caseUid);
+        const resultCaseUid = result.data.__caseUid;
+        const matchingCase = cases.find(
+          (entry) => entry.uid === resultCaseUid || entry.uid === caseEntry?.uid
+        );
+        const resolvedCaseEntry = matchingCase?.caseEntry ?? caseEntry;
         const submission: CompletedSubmission = {
           completedAt: new Date().toISOString(),
           id: `completed-${Date.now()}`,
           result,
           syncStatus: "pending",
-          userId: currentUser?.userId,
+          userId: currentUser?.userId ?? matchingCase?.userId,
           authKey: currentUser?.authKey,
-          caseEntry: matchingCase?.caseEntry
+          caseEntry: resolvedCaseEntry
         };
         setCompleted((current) => [submission, ...current]);
         void saveCompletedSubmission(submission)
@@ -180,13 +189,14 @@ export function DemoStateProvider({ children }: { children: ReactNode }) {
         setCurrentUser(undefined);
         setLastUpdate("Signed out");
       },
-      async pushToServer(apiBaseUrl) {
+      async pushToServer(apiBaseUrl, submissionIds) {
         const result = await pushLocalDataToServer({
           apiBaseUrl: apiBaseUrl?.trim() || serverApiBaseUrl,
           cases,
           completed,
           currentUser,
-          drafts
+          drafts,
+          submissionIds
         });
         await refreshLocalData();
         const messageParts = [`Pushed ${result.pushed} entries`];

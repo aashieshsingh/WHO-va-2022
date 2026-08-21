@@ -270,6 +270,22 @@ export function createWhoVaForm(
       session.setAnswer(question.name, value);
     };
 
+    const scrollToTop = () => {
+      const scrollView = scrollViewRef.current as {
+        scrollTo?: (options: { animated: boolean; y: number }) => void;
+      } | null;
+      scrollView?.scrollTo?.({ y: 0, animated: true });
+    };
+
+    const switchSection = (sectionName: string) => {
+      if (sectionName === snapshot.currentSection.name) return;
+      const moved = session.goToSection(sectionName);
+      if (!moved) return;
+      void saveDraft();
+      if (typeof requestAnimationFrame === "function") requestAnimationFrame(scrollToTop);
+      else setTimeout(scrollToTop, 0);
+    };
+
     const setQuestionDraftIssue = useCallback((questionName: string, issue: ValidationIssue | undefined) => {
       setDraftIssues((current) => {
         if (issue) return current[questionName] === issue ? current : { ...current, [questionName]: issue };
@@ -510,6 +526,30 @@ export function createWhoVaForm(
         <Text style={styles.progress}>
           {messages.sectionProgress(snapshot.currentSectionIndex + 1, snapshot.visibleSectionCount)}
         </Text>
+        <ScrollView
+          horizontal
+          keyboardShouldPersistTaps="handled"
+          showsHorizontalScrollIndicator={false}
+          style={styles.sectionSwitcher}
+          contentContainerStyle={styles.sectionSwitcherContent}
+        >
+          {snapshot.visibleSections.map((section, index) => {
+            const isActive = section.name === snapshot.currentSection.name;
+            return (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ selected: isActive }}
+                key={section.name}
+                onPress={() => switchSection(section.name)}
+                style={[styles.sectionButton, isActive && styles.sectionButtonActive]}
+              >
+                <Text style={[styles.sectionButtonText, isActive && styles.sectionButtonTextActive]}>
+                  {index + 1}. {localized(section.label, locale, section.name)}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
         <Text style={styles.sectionTitle}>
           {localized(snapshot.currentSection.label, locale, snapshot.currentSection.name)}
         </Text>

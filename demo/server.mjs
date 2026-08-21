@@ -523,11 +523,37 @@ async function saveFormEntry(payload) {
   );
 
   const saved = result.rows[0];
+  let recordedSnapshot = Boolean(shouldArchivePrevious);
+  if (status === "completed") {
+    await pool.query(
+      `
+        insert into who_va_recorded_data (
+          entry_uid,
+          user_id,
+          snapshot_type,
+          case_entry,
+          who_va_prefill,
+          submission,
+          validation_issues
+        )
+        values ($1, $2, 'completed', $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb)
+      `,
+      [
+        uid,
+        userId,
+        JSON.stringify(caseEntry),
+        JSON.stringify(whoVaData),
+        JSON.stringify(submission ?? {}),
+        JSON.stringify(validationIssues)
+      ]
+    );
+    recordedSnapshot = true;
+  }
 
   return {
     ...saved,
     archivedPrevious: Boolean(shouldArchivePrevious),
-    recordedSnapshot: Boolean(shouldArchivePrevious)
+    recordedSnapshot
   };
 }
 

@@ -160,6 +160,7 @@ class UniversalWhoVaSession implements WhoVaSession {
       currentSection,
       currentSectionIndex: index,
       visibleSectionCount: sections.length,
+      visibleSections: [...sections],
       questions: this.currentQuestions(currentSection),
       lockedQuestionNames: [...this.lockedQuestionNames],
       issues: [...this.issues],

@@ -86,13 +86,15 @@ export async function pushLocalDataToServer({
   cases,
   completed,
   currentUser,
-  drafts
+  drafts,
+  submissionIds
 }: {
   apiBaseUrl: string;
   cases: StoredCaseEntry[];
   completed: CompletedSubmission[];
   currentUser: RegisteredUser | undefined;
   drafts: WhoVaDraft[];
+  submissionIds?: string[];
 }): Promise<PushResult> {
   if (!currentUser?.userId || !currentUser.authKey) {
     throw new Error("Login with an online user before pushing mobile data.");
@@ -101,8 +103,14 @@ export async function pushLocalDataToServer({
   const result: PushResult = { pushed: 0, skipped: 0, failed: 0, errors: [] };
   const casesByUid = new Map(cases.map((entry) => [entry.uid, entry]));
   const draftsById = new Map(drafts.map((draft) => [draft.id, draft]));
+  const allowedSubmissionIds = submissionIds ? new Set(submissionIds) : undefined;
 
   for (const submission of completed) {
+    if (allowedSubmissionIds && !allowedSubmissionIds.has(submission.id)) continue;
+    if (submission.syncStatus === "pushed") {
+      result.skipped += 1;
+      continue;
+    }
     const uid = caseUidFromCompleted(submission);
     const storedCase = uid ? casesByUid.get(uid) : undefined;
     const caseEntry = storedCase?.caseEntry ?? submission.caseEntry;
@@ -119,7 +127,14 @@ export async function pushLocalDataToServer({
     try {
       await pushFormEntry(
         apiBaseUrl,
-        buildCompletedPayload(currentUser, caseEntry, uid, storedCase?.whoVaData ?? submission.result.data, submission, draftsById.get(uid))
+        buildCompletedPayload(
+          currentUser,
+          caseEntry,
+          uid,
+          storedCase?.whoVaData ?? submission.result.data,
+          submission,
+          draftsById.get(uid)
+        )
       );
       await markCompletedSubmissionPushed(submission.id);
       result.pushed += 1;

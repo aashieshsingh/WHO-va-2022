@@ -3,9 +3,16 @@ import { useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 
 import { DemoChrome, EmptyState, ScreenHeader, ScreenScroll, styles } from "../components/DemoLayout";
-import { countAnswers, formatDateTime, useDemoState, type RegisteredUser } from "../components/DemoState";
+import {
+  countAnswers,
+  formatDateTime,
+  useDemoState,
+  type CompletedSubmission,
+  type RegisteredUser
+} from "../components/DemoState";
 
 type DashboardStatus = "pending" | "drafted" | "final";
+type DashboardAction = "open" | "push" | "none";
 
 interface DashboardEntry {
   id: string;
@@ -14,7 +21,11 @@ interface DashboardEntry {
   status: DashboardStatus;
   updatedAt: string;
   answers: number;
+  action: DashboardAction;
+  actionLabel: string;
   route?: Href;
+  completedSubmissionId?: string;
+  syncStatus?: "pending" | "pushed";
 }
 
 interface UserDashboard {
@@ -31,6 +42,11 @@ const statusLabel: Record<DashboardStatus, string> = {
   final: "Final"
 };
 
+function caseUidFromCompleted(submission: CompletedSubmission): string | undefined {
+  const caseUid = submission.result.data.__caseUid;
+  return typeof caseUid === "string" ? caseUid : submission.caseEntry?.uid;
+}
+
 function userLabel(user: UserDashboard["user"]): string {
   return user.name || user.email || user.userId;
 }
@@ -40,38 +56,81 @@ export default function DashboardRoute() {
   const { cases, completed, currentUser, drafts, pushToServer, users } = useDemoState();
   const [pushMessage, setPushMessage] = useState("");
   const [pushFailed, setPushFailed] = useState(false);
-  const [isPushing, setIsPushing] = useState(false);
+  const [activeEntryId, setActiveEntryId] = useState<string | undefined>();
   const [pushApiBaseUrl, setPushApiBaseUrl] = useState("");
   const userMap = new Map<string, UserDashboard["user"]>();
   for (const user of users) userMap.set(user.userId, user);
   if (currentUser) userMap.set(currentUser.userId, currentUser);
 
-  const finalCaseUids = new Set(
-    completed
-      .map((submission) => {
-        const caseUid = submission.result.data.__caseUid;
-        return typeof caseUid === "string" ? caseUid : submission.caseEntry?.uid;
-      })
-      .filter((uid): uid is string => Boolean(uid))
-  );
+  const latestCompletedByCaseUid = new Map<string, CompletedSubmission>();
+  const orphanCompleted: CompletedSubmission[] = [];
+  for (const submission of completed) {
+    const caseUid = caseUidFromCompleted(submission);
+    if (!caseUid) {
+      orphanCompleted.push(submission);
+      continue;
+    }
+    const previous = latestCompletedByCaseUid.get(caseUid);
+    if (!previous || new Date(submission.completedAt).getTime() > new Date(previous.completedAt).getTime()) {
+      latestCompletedByCaseUid.set(caseUid, submission);
+    }
+  }
+
   const draftById = new Map(drafts.map((draft) => [draft.id, draft]));
   const caseUids = new Set(cases.map((entry) => entry.uid));
   const entries: DashboardEntry[] = [];
 
   for (const entry of cases) {
     const matchingDraft = draftById.get(entry.uid);
-    const isFinal = finalCaseUids.has(entry.uid);
+    const matchingCompleted = latestCompletedByCaseUid.get(entry.uid);
+    const isFinal = Boolean(matchingCompleted);
+    const syncStatus = matchingCompleted?.syncStatus;
     entries.push({
       id: entry.uid,
       title: entry.caseEntry.deceasedFullName || entry.uid,
       userId: entry.userId,
       status: isFinal ? "final" : matchingDraft ? "drafted" : "pending",
-      updatedAt: isFinal
-        ? (completed.find((submission) => submission.caseEntry?.uid === entry.uid || submission.result.data.__caseUid === entry.uid)
-            ?.completedAt ?? entry.updatedAt)
-        : (matchingDraft?.updatedAt ?? entry.updatedAt),
-      answers: matchingDraft ? countAnswers(matchingDraft) : 0,
-      route: { pathname: "/start", params: { caseUid: entry.uid } }
+      updatedAt: matchingCompleted?.completedAt ?? matchingDraft?.updatedAt ?? entry.updatedAt,
+      answers: matchingCompleted
+        ? Object.keys(matchingCompleted.result.data).length
+        : matchingDraft
+          ? countAnswers(matchingDraft)
+          : 0,
+      action: isFinal && syncStatus === "pending" ? "push" : "open",
+      actionLabel:
+        isFinal && syncStatus === "pending"
+          ? "Push data"
+          : isFinal
+            ? "Update form"
+            : matchingDraft
+              ? "Complete task"
+              : "Start form",
+      completedSubmissionId: matchingCompleted?.id,
+      route: { pathname: "/start", params: { caseUid: entry.uid } },
+      syncStatus
+    });
+  }
+
+  for (const [caseUid, submission] of latestCompletedByCaseUid) {
+    if (caseUids.has(caseUid)) continue;
+    const canOpen = Boolean(submission.caseEntry);
+    entries.push({
+      id: caseUid,
+      title: submission.caseEntry?.deceasedFullName || `Final ${caseUid}`,
+      userId: submission.userId ?? currentUser?.userId ?? "unknown-user",
+      status: "final",
+      updatedAt: submission.completedAt,
+      answers: Object.keys(submission.result.data).length,
+      action: submission.syncStatus === "pending" ? "push" : canOpen ? "open" : "none",
+      actionLabel:
+        submission.syncStatus === "pending"
+          ? "Push data"
+          : canOpen
+            ? "Update form"
+            : "No local case to update",
+      completedSubmissionId: submission.id,
+      route: canOpen ? { pathname: "/start", params: { caseUid, completedId: submission.id } } : undefined,
+      syncStatus: submission.syncStatus
     });
   }
 
@@ -85,20 +144,24 @@ export default function DashboardRoute() {
       status: "drafted",
       updatedAt: draft.updatedAt,
       answers: countAnswers(draft),
+      action: "open",
+      actionLabel: "Complete task",
       route: { pathname: "/continue", params: { draftId: draft.id } }
     });
   }
 
-  for (const submission of completed) {
-    const caseUid = typeof submission.result.data.__caseUid === "string" ? submission.result.data.__caseUid : submission.caseEntry?.uid;
-    if (caseUid && caseUids.has(caseUid)) continue;
+  for (const submission of orphanCompleted) {
     entries.push({
       id: submission.id,
       title: submission.caseEntry?.deceasedFullName || `Final ${submission.id}`,
       userId: submission.userId ?? currentUser?.userId ?? "unknown-user",
       status: "final",
       updatedAt: submission.completedAt,
-      answers: Object.keys(submission.result.data).length
+      answers: Object.keys(submission.result.data).length,
+      action: submission.syncStatus === "pending" ? "push" : "none",
+      actionLabel: submission.syncStatus === "pending" ? "Push data" : "No local case to update",
+      completedSubmissionId: submission.id,
+      syncStatus: submission.syncStatus
     });
   }
 
@@ -119,6 +182,42 @@ export default function DashboardRoute() {
       group[entry.status] += 1;
       return groups;
     }, []);
+  const totals = dashboards.reduce(
+    (summary, dashboard) => {
+      summary.pending += dashboard.pending;
+      summary.drafted += dashboard.drafted;
+      summary.final += dashboard.final;
+      return summary;
+    },
+    { pending: 0, drafted: 0, final: 0 }
+  );
+
+  const openEntryForm = (entry: DashboardEntry) => {
+    if (entry.route) router.push(entry.route);
+  };
+
+  const runEntryAction = (entry: DashboardEntry) => {
+    if (entry.action === "open") {
+      openEntryForm(entry);
+      return;
+    }
+    if (entry.action !== "push" || !entry.completedSubmissionId) return;
+    setActiveEntryId(entry.id);
+    setPushFailed(false);
+    setPushMessage(`Pushing ${entry.title}...`);
+    void pushToServer(pushApiBaseUrl, [entry.completedSubmissionId])
+      .then((result) => {
+        setPushFailed(result.failed > 0);
+        setPushMessage(`Pushed ${result.pushed}. ${result.skipped} skipped. ${result.failed} failed.`);
+      })
+      .catch((error: unknown) => {
+        setPushFailed(true);
+        setPushMessage((error as Error).message);
+      })
+      .finally(() => {
+        setActiveEntryId(undefined);
+      });
+  };
 
   return (
     <DemoChrome>
@@ -134,33 +233,23 @@ export default function DashboardRoute() {
             style={styles.textInput}
             value={pushApiBaseUrl}
           />
-          <Pressable
-            accessibilityRole="button"
-            disabled={isPushing}
-            onPress={() => {
-              setIsPushing(true);
-              setPushFailed(false);
-              setPushMessage("Pushing final mobile data to server...");
-              void pushToServer(pushApiBaseUrl)
-                .then((result) => {
-                  setPushFailed(result.failed > 0);
-                  setPushMessage(
-                    `Pushed ${result.pushed} entries. ${result.skipped} skipped. ${result.failed} failed.`
-                  );
-                })
-                .catch((error: unknown) => {
-                  setPushFailed(true);
-                  setPushMessage((error as Error).message);
-                })
-                .finally(() => {
-                  setIsPushing(false);
-                });
-            }}
-            style={[styles.actionButton, isPushing && styles.disabledButton]}
-          >
-            <Text style={styles.actionButtonText}>{isPushing ? "Pushing..." : "Push Final Data"}</Text>
-          </Pressable>
-          {pushMessage ? <Text style={pushFailed ? styles.pendingText : styles.validText}>{pushMessage}</Text> : null}
+          {pushMessage ? (
+            <Text style={pushFailed ? styles.pendingText : styles.validText}>{pushMessage}</Text>
+          ) : null}
+        </View>
+        <View style={styles.dashboardTotals}>
+          <View style={styles.metricBox}>
+            <Text style={styles.metricValue}>{totals.pending}</Text>
+            <Text style={styles.metricLabel}>Pending</Text>
+          </View>
+          <View style={styles.metricBox}>
+            <Text style={styles.metricValue}>{totals.drafted}</Text>
+            <Text style={styles.metricLabel}>Drafted</Text>
+          </View>
+          <View style={styles.metricBox}>
+            <Text style={styles.metricValue}>{totals.final}</Text>
+            <Text style={styles.metricLabel}>Final</Text>
+          </View>
         </View>
         {dashboards.length === 0 ? (
           <EmptyState message="No WHO form entries are saved on this device yet." />
@@ -184,41 +273,54 @@ export default function DashboardRoute() {
                 </View>
               </View>
               {dashboard.entries.map((entry) => {
-                const content = (
-                  <>
-                    <View style={styles.listItemText}>
+                const isActive = activeEntryId === entry.id;
+                return (
+                  <View key={entry.id} style={styles.listItem}>
+                    <Pressable
+                      accessibilityRole={entry.route ? "button" : undefined}
+                      disabled={!entry.route}
+                      onPress={() => openEntryForm(entry)}
+                      style={styles.listItemText}
+                    >
                       <Text style={styles.listItemTitle}>{entry.title}</Text>
                       <Text style={styles.listItemMeta}>
                         {statusLabel[entry.status]} - Updated {formatDateTime(entry.updatedAt)}
                       </Text>
+                      {entry.syncStatus ? (
+                        <Text style={entry.syncStatus === "pending" ? styles.pendingText : styles.validText}>
+                          {entry.syncStatus === "pending" ? "Pending server push" : "Pushed to server"}
+                        </Text>
+                      ) : null}
                       <Text style={styles.listItemId}>
                         {entry.answers ? `${entry.answers} answers - ` : ""}
                         {entry.id}
                       </Text>
+                    </Pressable>
+                    <View style={styles.dashboardRowActions}>
+                      <Text
+                        style={[
+                          styles.statusPill,
+                          entry.status === "pending" && styles.statusPillPending,
+                          entry.status === "final" && styles.statusPillFinal
+                        ]}
+                      >
+                        {statusLabel[entry.status]}
+                      </Text>
+                      {entry.action !== "none" ? (
+                        <Pressable
+                          accessibilityRole="button"
+                          disabled={isActive}
+                          onPress={() => runEntryAction(entry)}
+                          style={[styles.smallPrimaryButton, isActive && styles.disabledButton]}
+                        >
+                          <Text style={styles.smallPrimaryButtonText}>
+                            {isActive ? "Working..." : entry.actionLabel}
+                          </Text>
+                        </Pressable>
+                      ) : (
+                        <Text style={styles.listItemActionLabel}>{entry.actionLabel}</Text>
+                      )}
                     </View>
-                    <Text
-                      style={[
-                        styles.statusPill,
-                        entry.status === "pending" && styles.statusPillPending,
-                        entry.status === "final" && styles.statusPillFinal
-                      ]}
-                    >
-                      {statusLabel[entry.status]}
-                    </Text>
-                  </>
-                );
-                return entry.route ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    key={entry.id}
-                    onPress={() => router.push(entry.route!)}
-                    style={styles.listItem}
-                  >
-                    {content}
-                  </Pressable>
-                ) : (
-                  <View key={entry.id} style={styles.listItem}>
-                    {content}
                   </View>
                 );
               })}
