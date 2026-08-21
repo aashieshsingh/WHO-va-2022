@@ -63,16 +63,18 @@ function caseUidFromCompleted(submission: CompletedSubmission): string | undefin
 
 function buildCompletedPayload(
   user: RegisteredUser,
-  entry: StoredCaseEntry,
+  caseEntry: CaseEntryData,
+  uid: string,
+  whoVaData: SubmissionData,
   submission: CompletedSubmission,
   draft?: WhoVaDraft
 ): SaveFormEntryPayload {
   return {
-    uid: entry.uid,
+    uid,
     userId: user.userId,
     authKey: user.authKey,
-    caseEntry: entry.caseEntry,
-    whoVaData: draft?.data ?? entry.whoVaData,
+    caseEntry,
+    whoVaData: draft?.data ?? whoVaData,
     status: "completed",
     submission: submission.result.data,
     validationIssues: submission.result.issues
@@ -100,15 +102,25 @@ export async function pushLocalDataToServer({
   const casesByUid = new Map(cases.map((entry) => [entry.uid, entry]));
   const draftsById = new Map(drafts.map((draft) => [draft.id, draft]));
 
-  for (const submission of completed.filter((entry) => entry.syncStatus === "pending")) {
+  for (const submission of completed) {
     const uid = caseUidFromCompleted(submission);
-    const caseEntry = uid ? casesByUid.get(uid) : undefined;
-    if (!uid || !caseEntry || caseEntry.userId !== currentUser.userId || !submission.result.valid) {
+    const storedCase = uid ? casesByUid.get(uid) : undefined;
+    const caseEntry = storedCase?.caseEntry ?? submission.caseEntry;
+    const submissionUserId = submission.userId ?? storedCase?.userId;
+    if (
+      !uid ||
+      !caseEntry ||
+      (submissionUserId && submissionUserId !== currentUser.userId) ||
+      !submission.result.valid
+    ) {
       result.skipped += 1;
       continue;
     }
     try {
-      await pushFormEntry(apiBaseUrl, buildCompletedPayload(currentUser, caseEntry, submission, draftsById.get(uid)));
+      await pushFormEntry(
+        apiBaseUrl,
+        buildCompletedPayload(currentUser, caseEntry, uid, storedCase?.whoVaData ?? submission.result.data, submission, draftsById.get(uid))
+      );
       await markCompletedSubmissionPushed(submission.id);
       result.pushed += 1;
     } catch (error) {
