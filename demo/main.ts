@@ -272,9 +272,8 @@ const loadSavedCaseEntries = async (): Promise<StoredCaseEntry[]> => {
       whoVaData: entry.whoVaData ?? entry.who_va_prefill ?? {},
       updatedAt: entry.updatedAt ?? entry.updated_at
     }))
-    .filter(
-      (entry): entry is StoredCaseEntry =>
-        Boolean(entry.uid && entry.caseEntry?.deceasedFullName && entry.updatedAt)
+    .filter((entry): entry is StoredCaseEntry =>
+      Boolean(entry.uid && entry.caseEntry?.deceasedFullName && entry.updatedAt)
     );
 };
 
@@ -285,9 +284,7 @@ const refreshDeceasedDropdown = async () => {
     const remoteEntries = await loadSavedCaseEntries();
     writeStoredCaseEntries(mergeStoredCaseEntries(remoteEntries, readStoredCaseEntries()).slice(0, 100));
     pickerStatusMessage =
-      remoteEntries.length > 0
-        ? undefined
-        : "No deceased entries were returned from the database.";
+      remoteEntries.length > 0 ? undefined : "No deceased entries were returned from the database.";
   } catch (error) {
     console.warn("Could not load saved case entries", error);
     pickerStatusMessage = error instanceof Error ? error.message : String(error);
@@ -564,7 +561,7 @@ const readJsonResponse = async <T extends { error?: string }>(response: Response
   } catch (error) {
     if (error instanceof Error && responseText && responseText.trim().startsWith("{")) throw error;
     throw new Error(
-      `The save API returned a non-JSON response. Open the DB-backed demo server, not the plain Vite server. Status: ${response.status}. Response: ${responseText || "empty"}`
+      `The API returned a web page instead of JSON. Open the DB-backed demo server, not the plain Vite server. Status: ${response.status}.`
     );
   }
 };
@@ -771,7 +768,9 @@ const renderDashboard = (users: DashboardUserGroup[]) => {
       status.append(statusBadge);
       const updated = document.createElement("td");
       updated.textContent = formatDateTime(
-        formEntry.status === "final" ? formEntry.completedAt : formEntry.draftUpdatedAt ?? formEntry.updatedAt
+        formEntry.status === "final"
+          ? formEntry.completedAt
+          : (formEntry.draftUpdatedAt ?? formEntry.updatedAt)
       );
       const action = document.createElement("td");
       const actionButton = document.createElement("button");
@@ -808,7 +807,9 @@ const refreshUserDashboard = async () => {
   }
   try {
     const response = await fetch(dashboardApiUrl());
-    const body = await readJsonResponse<{ ok: boolean; users?: DashboardUserGroup[]; error?: string }>(response);
+    const body = await readJsonResponse<{ ok: boolean; users?: DashboardUserGroup[]; error?: string }>(
+      response
+    );
     if (!response.ok || !body.ok) {
       throw new Error(body.error ?? `Dashboard could not be loaded. Status: ${response.status}.`);
     }

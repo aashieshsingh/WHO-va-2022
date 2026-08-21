@@ -21,6 +21,13 @@ export interface LoginPayload {
   password: string;
 }
 
+export interface LoginResult {
+  user: RegisteredUser;
+  importedServerRecords: number;
+  syncWarning?: string;
+  usedCachedUser?: boolean;
+}
+
 export interface CaseEntryData {
   district: string;
   block: string;
@@ -290,6 +297,10 @@ function normalizeApiBaseUrl(value: string): string {
   if (!trimmed) return trimmed;
   return /^https?:\/\//iu.test(trimmed) ? trimmed : `http://${trimmed}`;
 }
+
+function nonJsonApiResponseMessage(url: string, status: number): string {
+  return `The server at ${url} returned a web page instead of API data (HTTP ${status}). Use the WHO VA API server URL, for example http://YOUR-COMPUTER-IP:5173, and make sure the demo server is running.`;
+}
 function createMobileSyncUrl(apiBaseUrl: string, user: RegisteredUser): string {
   const params = new URLSearchParams({ userId: user.userId, authKey: user.authKey });
   return `${normalizeApiBaseUrl(apiBaseUrl).replace(/\/$/u, "")}/api/mobile-sync?${params.toString()}`;
@@ -306,25 +317,9 @@ function createSyncedSubmissionResult(entry: ServerMobileSyncEntry): SubmissionV
   } as SubmissionValidationResult;
 }
 
-export async function syncServerDataForUser(user: RegisteredUser, apiBaseUrl: string): Promise<number> {
-  const url = createMobileSyncUrl(apiBaseUrl, user);
-  const response = await fetch(url);
-  const responseText = await response.text();
-  let body: { ok: boolean; entries?: ServerMobileSyncEntry[]; error?: string };
-  try {
-    body = responseText
-      ? (JSON.parse(responseText) as { ok: boolean; entries?: ServerMobileSyncEntry[]; error?: string })
-      : { ok: false };
-  } catch {
-    const preview = responseText.trim().slice(0, 80);
-    throw new Error(
-      `Mobile sync server at ${url} did not return JSON.${preview ? ` Response started with: ${preview}` : ""}`
-    );
-  }
-  if (!response.ok || !body.ok) throw new Error(body.error ?? "Could not sync server records.");
-
+async function importServerEntries(user: RegisteredUser, entries: ServerMobileSyncEntry[]): Promise<number> {
   let imported = 0;
-  for (const entry of body.entries ?? []) {
+  for (const entry of entries) {
     if (!entry.uid || !entry.caseEntry) continue;
     const updatedAt = entry.updatedAt ?? entry.completedAt ?? entry.createdAt ?? new Date().toISOString();
     await saveCaseEntry({
@@ -351,7 +346,28 @@ export async function syncServerDataForUser(user: RegisteredUser, apiBaseUrl: st
   return imported;
 }
 
-export async function loginOnlineUser(data: LoginPayload, apiBaseUrl: string): Promise<RegisteredUser> {
+export async function syncServerDataForUser(user: RegisteredUser, apiBaseUrl: string): Promise<number> {
+  const url = createMobileSyncUrl(apiBaseUrl, user);
+  let response: Response;
+  try {
+    response = await fetch(url);
+  } catch (error) {
+    throw new Error(`Could not reach server records API at ${url}. ${(error as Error).message}`);
+  }
+  const responseText = await response.text();
+  let body: { ok: boolean; entries?: ServerMobileSyncEntry[]; error?: string };
+  try {
+    body = responseText
+      ? (JSON.parse(responseText) as { ok: boolean; entries?: ServerMobileSyncEntry[]; error?: string })
+      : { ok: false };
+  } catch {
+    throw new Error(nonJsonApiResponseMessage(url, response.status));
+  }
+  if (!response.ok || !body.ok) throw new Error(body.error ?? "Could not sync server records.");
+  return importServerEntries(user, body.entries ?? []);
+}
+
+export async function loginOnlineUser(data: LoginPayload, apiBaseUrl: string): Promise<LoginResult> {
   const url = `${normalizeApiBaseUrl(apiBaseUrl).replace(/\/$/u, "")}/api/login`;
   let response: Response;
   try {
@@ -362,7 +378,14 @@ export async function loginOnlineUser(data: LoginPayload, apiBaseUrl: string): P
     });
   } catch (_error) {
     try {
-      return await loginCachedUser(data);
+      const cachedUser = await loginCachedUser(data);
+      return {
+        user: cachedUser,
+        importedServerRecords: 0,
+        syncWarning:
+          "Signed in offline from cached login. Server records were not checked because the API could not be reached.",
+        usedCachedUser: true
+      };
     } catch (localError) {
       throw new Error(
         `Could not reach login server at ${url}. ${(localError as Error).message} Check server, IP address, Wi-Fi, and firewall.`
@@ -371,23 +394,26 @@ export async function loginOnlineUser(data: LoginPayload, apiBaseUrl: string): P
   }
 
   const responseText = await response.text();
-  let body: { ok: boolean; user?: RegisteredUser; error?: string };
+  let body: { ok: boolean; user?: RegisteredUser; entries?: ServerMobileSyncEntry[]; error?: string };
   try {
     body = responseText
-      ? (JSON.parse(responseText) as { ok: boolean; user?: RegisteredUser; error?: string })
+      ? (JSON.parse(responseText) as {
+          ok: boolean;
+          user?: RegisteredUser;
+          entries?: ServerMobileSyncEntry[];
+          error?: string;
+        })
       : { ok: false };
   } catch {
-    const preview = responseText.trim().slice(0, 80);
-    throw new Error(
-      `Login server at ${url} did not return JSON. Check that Server URL points to the WHO VA demo API, not the Expo app or another web page.${preview ? ` Response started with: ${preview}` : ""}`
-    );
+    throw new Error(nonJsonApiResponseMessage(url, response.status));
   }
   if (!response.ok || !body.ok || !body.user?.authKey) {
     throw new Error(body.error ?? "Online login failed.");
   }
   await cacheServerUser(body.user, data.password);
+  const importedServerRecords = await importServerEntries(body.user, body.entries ?? []);
   await setCurrentUser(body.user.userId);
-  return body.user;
+  return { user: body.user, importedServerRecords };
 }
 export async function setCurrentUser(userId: string): Promise<void> {
   const database = await openDatabase();

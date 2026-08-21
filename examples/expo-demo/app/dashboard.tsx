@@ -53,9 +53,11 @@ function userLabel(user: UserDashboard["user"]): string {
 
 export default function DashboardRoute() {
   const router = useRouter();
-  const { cases, completed, currentUser, drafts, pushToServer, users } = useDemoState();
+  const { cases, completed, currentUser, drafts, pushToServer, syncFromServer, users } = useDemoState();
   const [pushMessage, setPushMessage] = useState("");
   const [pushFailed, setPushFailed] = useState(false);
+  const [syncFailed, setSyncFailed] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [activeEntryId, setActiveEntryId] = useState<string | undefined>();
   const [pushApiBaseUrl, setPushApiBaseUrl] = useState("");
   const userMap = new Map<string, UserDashboard["user"]>();
@@ -196,6 +198,25 @@ export default function DashboardRoute() {
     if (entry.route) router.push(entry.route);
   };
 
+  const runServerSync = () => {
+    setIsSyncing(true);
+    setSyncFailed(false);
+    setPushMessage("Syncing server records...");
+    void syncFromServer(pushApiBaseUrl)
+      .then((imported) => {
+        setPushMessage(
+          imported ? `Synced ${imported} server records.` : "No server records found for this user."
+        );
+      })
+      .catch((error: unknown) => {
+        setSyncFailed(true);
+        setPushMessage((error as Error).message);
+      })
+      .finally(() => {
+        setIsSyncing(false);
+      });
+  };
+
   const runEntryAction = (entry: DashboardEntry) => {
     if (entry.action === "open") {
       openEntryForm(entry);
@@ -233,8 +254,18 @@ export default function DashboardRoute() {
             style={styles.textInput}
             value={pushApiBaseUrl}
           />
+          <Pressable
+            accessibilityRole="button"
+            disabled={!currentUser || isSyncing}
+            onPress={runServerSync}
+            style={[styles.smallPrimaryButton, (!currentUser || isSyncing) && styles.disabledButton]}
+          >
+            <Text style={styles.smallPrimaryButtonText}>{isSyncing ? "Syncing..." : "Sync from server"}</Text>
+          </Pressable>
           {pushMessage ? (
-            <Text style={pushFailed ? styles.pendingText : styles.validText}>{pushMessage}</Text>
+            <Text style={pushFailed || syncFailed ? styles.pendingText : styles.validText}>
+              {pushMessage}
+            </Text>
           ) : null}
         </View>
         <View style={styles.dashboardTotals}>

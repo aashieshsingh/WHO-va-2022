@@ -353,8 +353,6 @@ async function loadUserByAuthKey(userId, authKey) {
 
 async function listMobileSyncEntries(userId, authKey) {
   const requester = await loadUserByAuthKey(userId, authKey);
-  const params = requester.role === "admin" ? [] : [requester.userId];
-  const userFilter = requester.role === "admin" ? "" : "where f.user_id = $1";
   const result = await pool.query(
     `
       select
@@ -370,11 +368,11 @@ async function listMobileSyncEntries(userId, authKey) {
         f.submission,
         f.validation_issues
       from who_va_form_entries f
-      ${userFilter}
+      where f.user_id = $1
       order by f.updated_at desc
       limit 500
     `,
-    params
+    [requester.userId]
   );
 
   return result.rows.map((row) => ({
@@ -662,7 +660,8 @@ const server = createHttpServer(async (request, response) => {
 
     if (url.pathname === "/api/login" && request.method === "POST") {
       const user = await loginUser(await readJsonBody(request));
-      sendJson(response, 200, { ok: true, user });
+      const entries = await listMobileSyncEntries(user.userId, user.authKey);
+      sendJson(response, 200, { ok: true, user, entries });
       return;
     }
 

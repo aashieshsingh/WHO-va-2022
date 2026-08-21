@@ -28,6 +28,13 @@ export interface LoginPayload {
   password: string;
 }
 
+export interface LoginResult {
+  user: RegisteredUser;
+  importedServerRecords: number;
+  syncWarning?: string;
+  usedCachedUser?: boolean;
+}
+
 export interface CaseEntryData {
   district: string;
   block: string;
@@ -126,7 +133,7 @@ export async function listCaseEntries(): Promise<StoredCaseEntry[]> {
   );
 }
 
-export async function loginOnlineUser(_data: LoginPayload, _apiBaseUrl: string): Promise<RegisteredUser> {
+export async function loginOnlineUser(_data: LoginPayload, _apiBaseUrl: string): Promise<LoginResult> {
   throw new Error("Online login is not available in the web storage demo.");
 }
 

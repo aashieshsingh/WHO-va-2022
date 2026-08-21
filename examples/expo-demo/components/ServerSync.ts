@@ -32,14 +32,16 @@ function normalizeApiBaseUrl(value: string): string {
   return /^https?:\/\//iu.test(trimmed) ? trimmed : `http://${trimmed}`;
 }
 
+function nonJsonApiResponseMessage(status: number): string {
+  return `Server returned a web page instead of API data while pushing data (HTTP ${status}). Use the WHO VA API server URL, not the Expo app URL.`;
+}
+
 async function readJsonResponse<T extends { error?: string }>(response: Response): Promise<T> {
   const responseText = await response.text();
   try {
     return responseText ? (JSON.parse(responseText) as T) : ({} as T);
   } catch {
-    throw new Error(
-      `Server returned non-JSON while pushing data. Status: ${response.status}. Response: ${responseText || "empty"}`
-    );
+    throw new Error(nonJsonApiResponseMessage(response.status));
   }
 }
 

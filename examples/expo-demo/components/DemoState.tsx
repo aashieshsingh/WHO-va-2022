@@ -51,6 +51,7 @@ interface DemoState {
   login(payload: LoginPayload, apiBaseUrl?: string): Promise<void>;
   logout(): Promise<void>;
   pushToServer(apiBaseUrl?: string, submissionIds?: string[]): Promise<PushResult>;
+  syncFromServer(apiBaseUrl?: string): Promise<number>;
   saveCase(caseEntry: CaseEntryData): Promise<StoredCaseEntry>;
   setLastUpdate(message: string): void;
 }
@@ -179,21 +180,18 @@ export function DemoStateProvider({ children }: { children: ReactNode }) {
       isDatabaseReady,
       async login(payload, apiBaseUrl) {
         const targetApiBaseUrl = apiBaseUrl?.trim() || API_BASE_URL;
-        const user = await loginOnlineUser(payload, targetApiBaseUrl);
+        const loginResult = await loginOnlineUser(payload, targetApiBaseUrl);
+        const { importedServerRecords, syncWarning, user } = loginResult;
         setServerApiBaseUrl(targetApiBaseUrl);
         setCurrentUser(user);
-        try {
-          const importedServerRecords = await syncServerDataForUser(user, targetApiBaseUrl);
-          setLastUpdate(
+        setLastUpdate(
+          syncWarning ??
             `Signed in as ${user.name}${
               importedServerRecords
                 ? `. Imported ${importedServerRecords} server records.`
                 : ". No server records found."
             }`
-          );
-        } catch (error) {
-          setLastUpdate(`Signed in as ${user.name}. Server data sync failed: ${(error as Error).message}`);
-        }
+        );
         await refreshLocalData();
       },
       async logout() {
@@ -216,6 +214,17 @@ export function DemoStateProvider({ children }: { children: ReactNode }) {
         if (result.failed) messageParts.push(`${result.failed} failed`);
         setLastUpdate(messageParts.join(", "));
         return result;
+      },
+      async syncFromServer(apiBaseUrl) {
+        if (!currentUser) throw new Error("Login before syncing server data.");
+        const targetApiBaseUrl = apiBaseUrl?.trim() || serverApiBaseUrl;
+        setServerApiBaseUrl(targetApiBaseUrl);
+        const imported = await syncServerDataForUser(currentUser, targetApiBaseUrl);
+        await refreshLocalData();
+        setLastUpdate(
+          imported ? `Synced ${imported} server records.` : "No server records found for this user."
+        );
+        return imported;
       },
       latestDraft: drafts[0],
       lastUpdate,
