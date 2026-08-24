@@ -1,5 +1,8 @@
 import { randomBytes, timingSafeEqual, scryptSync } from "node:crypto";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { createServer as createHttpServer } from "node:http";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { createServer as createViteServer } from "vite";
 
@@ -9,11 +12,15 @@ import { runMigrations } from "./migrate.mjs";
 const PORT = Number(process.env.PORT ?? 5173);
 const HOST = process.env.HOST ?? "0.0.0.0";
 const pool = createPostgresPool();
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const attachmentStorageRoot = path.resolve(
+  process.env.WHO_VA_ATTACHMENT_DIR ?? path.join(__dirname, "uploads", "attachments")
+);
 
 const corsHeaders = {
   "access-control-allow-origin": "*",
-  "access-control-allow-methods": "DELETE,GET,POST,OPTIONS",
-  "access-control-allow-headers": "content-type"
+  "access-control-allow-methods": "DELETE,GET,POST,PUT,OPTIONS",
+  "access-control-allow-headers": "content-type,x-attachment-name,x-attachment-size"
 };
 
 async function readJsonBody(request) {
@@ -21,6 +28,17 @@ async function readJsonBody(request) {
   for await (const chunk of request) chunks.push(chunk);
   if (chunks.length === 0) return {};
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+
+async function readRawBody(request, maxBytes = 30 * 1024 * 1024) {
+  const chunks = [];
+  let totalBytes = 0;
+  for await (const chunk of request) {
+    totalBytes += chunk.length;
+    if (totalBytes > maxBytes) throw badRequest("Attachment exceeds the maximum upload size");
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
 }
 
 function sendJson(response, statusCode, body) {
@@ -70,6 +88,135 @@ function badRequest(message) {
   const error = new Error(message);
   error.statusCode = 400;
   return error;
+}
+
+function notFound(message) {
+  const error = new Error(message);
+  error.statusCode = 404;
+  return error;
+}
+
+const attachmentIdPattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
+const attachmentMimeExtensions = new Map([
+  ["image/jpeg", ".jpg"],
+  ["application/pdf", ".pdf"],
+  ["audio/webm", ".webm"],
+  ["audio/webm;codecs=opus", ".webm"],
+  ["audio/mp4", ".m4a"],
+  ["audio/ogg", ".ogg"]
+]);
+
+function validateAttachmentId(id) {
+  if (!attachmentIdPattern.test(id)) throw badRequest("Attachment id is invalid");
+  return id;
+}
+
+function extensionForAttachment(mimeType, originalName = "") {
+  const normalized = String(mimeType).toLowerCase();
+  const exact = attachmentMimeExtensions.get(normalized);
+  if (exact) return exact;
+  if (normalized.startsWith("image/jpeg")) return ".jpg";
+  if (normalized.startsWith("audio/webm")) return ".webm";
+  const originalExtension = path.extname(originalName).toLowerCase();
+  if (/^\.[a-z0-9]{1,8}$/u.test(originalExtension)) return originalExtension;
+  return ".bin";
+}
+
+async function ensureAttachmentTable() {
+  await pool.query(`
+    create table if not exists who_va_attachments (
+      id text primary key,
+      original_name text,
+      stored_name text not null,
+      mime_type text not null,
+      size_bytes integer not null,
+      storage_path text not null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    )
+  `);
+  await pool.query(
+    "create index if not exists who_va_attachments_updated_at_idx on who_va_attachments (updated_at)"
+  );
+}
+
+async function saveAttachment(id, request) {
+  await ensureAttachmentTable();
+  const attachmentId = validateAttachmentId(id);
+  const originalNameHeader = String(request.headers["x-attachment-name"] ?? "");
+  const originalName = (() => {
+    try {
+      return decodeURIComponent(originalNameHeader).slice(0, 255);
+    } catch {
+      throw badRequest("Attachment name is invalid");
+    }
+  })();
+  const contentType = String(request.headers["content-type"] ?? "application/octet-stream").split(";")[0];
+  const bytes = await readRawBody(request);
+  if (bytes.length === 0) throw badRequest("Attachment body is empty");
+  const reportedSize = Number(request.headers["x-attachment-size"] ?? bytes.length);
+  if (Number.isFinite(reportedSize) && reportedSize !== bytes.length) {
+    throw badRequest("Attachment size does not match the uploaded body");
+  }
+  const storedName = `${attachmentId}${extensionForAttachment(contentType, originalName)}`;
+  const storagePath = path.join(attachmentStorageRoot, storedName);
+  const resolvedStoragePath = path.resolve(storagePath);
+  if (!resolvedStoragePath.startsWith(`${attachmentStorageRoot}${path.sep}`)) {
+    throw badRequest("Attachment storage path is invalid");
+  }
+  await mkdir(attachmentStorageRoot, { recursive: true });
+  await writeFile(resolvedStoragePath, bytes);
+  const result = await pool.query(
+    `
+      insert into who_va_attachments (
+        id,
+        original_name,
+        stored_name,
+        mime_type,
+        size_bytes,
+        storage_path
+      )
+      values ($1, $2, $3, $4, $5, $6)
+      on conflict (id) do update set
+        original_name = excluded.original_name,
+        stored_name = excluded.stored_name,
+        mime_type = excluded.mime_type,
+        size_bytes = excluded.size_bytes,
+        storage_path = excluded.storage_path,
+        updated_at = now()
+      returning id, original_name, stored_name, mime_type, size_bytes, created_at, updated_at
+    `,
+    [attachmentId, originalName || null, storedName, contentType, bytes.length, resolvedStoragePath]
+  );
+  const saved = result.rows[0];
+  return {
+    id: saved.id,
+    uri: `/api/attachments/${encodeURIComponent(saved.id)}`,
+    originalName: saved.original_name,
+    storedName: saved.stored_name,
+    mimeType: saved.mime_type,
+    size: saved.size_bytes,
+    createdAt: saved.created_at,
+    updatedAt: saved.updated_at
+  };
+}
+
+async function loadAttachment(id) {
+  await ensureAttachmentTable();
+  const attachmentId = validateAttachmentId(id);
+  const result = await pool.query(
+    "select id, original_name, stored_name, mime_type, size_bytes, storage_path from who_va_attachments where id = $1",
+    [attachmentId]
+  );
+  const attachment = result.rows[0];
+  if (!attachment) throw notFound("Attachment not found");
+  const storagePath = path.resolve(attachment.storage_path);
+  if (!storagePath.startsWith(`${attachmentStorageRoot}${path.sep}`)) {
+    throw badRequest("Stored attachment path is invalid");
+  }
+  const fileStats = await stat(storagePath).catch(() => undefined);
+  if (!fileStats?.isFile()) throw notFound("Attachment file not found");
+  return { ...attachment, storagePath };
 }
 
 const formEntryStatuses = new Set(["case-entry", "completed"]);
@@ -200,13 +347,13 @@ const characterOnlyCaseEntryFields = {
   villages: "Villages",
   phc: "Phc",
   subcentre: "Subcentre",
-  householdHeadName: "Name of head of the Household",
   deceasedFullName: "Full name of the deceased"
 };
 
 const characterOnlyPattern = /^[A-Za-z]+(?: [A-Za-z]+)*$/;
 
 const allowedCaseEntrySexValues = new Set(["female", "male", "undetermined"]);
+const allowedDeathPlaceValues = new Set(["hospital-death", "home-death", "on-the-way-to-hospital"]);
 
 function validateCaseEntry(caseEntry) {
   for (const [field, label] of Object.entries(characterOnlyCaseEntryFields)) {
@@ -221,6 +368,12 @@ function validateCaseEntry(caseEntry) {
 
   if (!allowedCaseEntrySexValues.has(caseEntry.deceasedSex)) {
     const error = new Error("Select a valid sex of the deceased.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (!allowedDeathPlaceValues.has(caseEntry.deathPlace)) {
+    const error = new Error("Select a valid death place.");
     error.statusCode = 400;
     throw error;
   }
@@ -619,6 +772,28 @@ const server = createHttpServer(async (request, response) => {
     if (url.pathname === "/api/health" && request.method === "GET") {
       await pool.query("select 1");
       sendJson(response, 200, { ok: true, database: process.env.PGDATABASE ?? "whova" });
+      return;
+    }
+
+    if (url.pathname.startsWith("/api/attachments/") && request.method === "PUT") {
+      const id = decodeURIComponent(url.pathname.slice("/api/attachments/".length));
+      const attachment = await saveAttachment(id, request);
+      sendJson(response, 200, { ok: true, attachment });
+      return;
+    }
+
+    if (url.pathname.startsWith("/api/attachments/") && request.method === "GET") {
+      const id = decodeURIComponent(url.pathname.slice("/api/attachments/".length));
+      const attachment = await loadAttachment(id);
+      const bytes = await readFile(attachment.storagePath);
+      response.writeHead(200, {
+        "content-type": attachment.mime_type,
+        "content-length": String(bytes.length),
+        "cache-control": "private, max-age=3600",
+        "x-content-type-options": "nosniff",
+        ...corsHeaders
+      });
+      response.end(bytes);
       return;
     }
 

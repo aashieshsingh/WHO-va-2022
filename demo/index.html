@@ -191,7 +191,7 @@
           <div class="entry-form__header">
             <div>
               <h2 id="case-entry-title">Case data entry</h2>
-              <p>Register household and deceased details before starting the verbal autopsy.</p>
+              <p>Register demographic and deceased details before starting the verbal autopsy.</p>
             </div>
             <label>
               <span>Uid</span>
@@ -199,123 +199,131 @@
             </label>
           </div>
 
-          <div class="entry-grid">
-            <label>
-              <span>District</span>
-              <input
-                name="district"
-                type="text"
-                autocomplete="address-level2"
-                pattern="[A-Za-z]+(?: [A-Za-z]+)*"
-                title="Use letters only. Spaces are allowed between words."
-                required
-              />
-            </label>
-            <label>
-              <span>Block</span>
-              <input
-                name="block"
-                type="text"
-                pattern="[A-Za-z]+(?: [A-Za-z]+)*"
-                title="Use letters only. Spaces are allowed between words."
-                required
-              />
-            </label>
-            <label>
-              <span>Villages</span>
-              <input
-                name="villages"
-                type="text"
-                pattern="[A-Za-z]+(?: [A-Za-z]+)*"
-                title="Use letters only. Spaces are allowed between words."
-                required
-              />
-            </label>
-            <label>
-              <span>Phc</span>
-              <input
-                name="phc"
-                type="text"
-                pattern="[A-Za-z]+(?: [A-Za-z]+)*"
-                title="Use letters only. Spaces are allowed between words."
-                required
-              />
-            </label>
-            <label>
-              <span>Subcentre</span>
-              <input
-                name="subcentre"
-                type="text"
-                pattern="[A-Za-z]+(?: [A-Za-z]+)*"
-                title="Use letters only. Spaces are allowed between words."
-                required
-              />
-            </label>
-            <label>
-              <span>Date</span>
-              <input name="date" type="date" required />
-            </label>
-            <label>
-              <span>Name of head of the Household</span>
-              <input
-                name="householdHeadName"
-                type="text"
-                pattern="[A-Za-z]+(?: [A-Za-z]+)*"
-                title="Use letters only. Spaces are allowed between words."
-                required
-              />
-            </label>
-            <label>
-              <span>Full name of the deceased</span>
-              <input
-                name="deceasedFullName"
-                type="text"
-                pattern="[A-Za-z]+(?: [A-Za-z]+)*"
-                title="Use letters only. Spaces are allowed between words."
-                required
-              />
-            </label>
-            <label>
-              <span>Sex of the deceased</span>
-              <select name="deceasedSex" required>
-                <option value="">Select sex</option>
-                <option value="female">Female</option>
-                <option value="male">Male</option>
-                <option value="undetermined">Undetermined</option>
-              </select>
-            </label>
-            <label class="entry-grid__wide">
-              <span>House address of the deceased</span>
-              <textarea name="deceasedHouseAddress" rows="3" required></textarea>
-            </label>
-            <label>
-              <span>Pin code</span>
-              <input
-                name="pinCode"
-                type="text"
-                inputmode="numeric"
-                pattern="[0-9]{6}"
-                maxlength="6"
-                required
-              />
-            </label>
-            <label>
-              <span>Death date</span>
-              <input name="deathDate" type="date" required />
-            </label>
-            <label>
-              <span>Age at the time of death</span>
-              <input
-                name="ageAtDeath"
-                type="number"
-                inputmode="numeric"
-                min="0"
-                max="130"
-                step="1"
-                required
-              />
-            </label>
-          </div>
+          <fieldset class="entry-section">
+            <legend>Demographic details</legend>
+            <div class="entry-grid">
+              <label>
+                <span>District</span>
+                <input
+                  name="district"
+                  type="text"
+                  autocomplete="address-level2"
+                  pattern="[A-Za-z]+(?: [A-Za-z]+)*"
+                  title="Use letters only. Spaces are allowed between words."
+                  required
+                />
+              </label>
+              <label>
+                <span>Block</span>
+                <input
+                  name="block"
+                  type="text"
+                  pattern="[A-Za-z]+(?: [A-Za-z]+)*"
+                  title="Use letters only. Spaces are allowed between words."
+                  required
+                />
+              </label>
+              <label>
+                <span>Villages</span>
+                <input
+                  name="villages"
+                  type="text"
+                  pattern="[A-Za-z]+(?: [A-Za-z]+)*"
+                  title="Use letters only. Spaces are allowed between words."
+                  required
+                />
+              </label>
+              <label>
+                <span>Phc</span>
+                <input
+                  name="phc"
+                  type="text"
+                  pattern="[A-Za-z]+(?: [A-Za-z]+)*"
+                  title="Use letters only. Spaces are allowed between words."
+                  required
+                />
+              </label>
+              <label>
+                <span>Subcentre</span>
+                <input
+                  name="subcentre"
+                  type="text"
+                  pattern="[A-Za-z]+(?: [A-Za-z]+)*"
+                  title="Use letters only. Spaces are allowed between words."
+                  required
+                />
+              </label>
+              <label>
+                <span>Date</span>
+                <input name="date" type="date" required />
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset class="entry-section">
+            <legend>Deceased details</legend>
+            <div class="entry-grid">
+              <label>
+                <span>Full name of the deceased</span>
+                <input
+                  name="deceasedFullName"
+                  type="text"
+                  pattern="[A-Za-z]+(?: [A-Za-z]+)*"
+                  title="Use letters only. Spaces are allowed between words."
+                  required
+                />
+              </label>
+              <label>
+                <span>Sex of the deceased</span>
+                <select name="deceasedSex" required>
+                  <option value="">Select sex</option>
+                  <option value="female">Female</option>
+                  <option value="male">Male</option>
+                  <option value="undetermined">Undetermined</option>
+                </select>
+              </label>
+              <label class="entry-grid__wide">
+                <span>House address of the deceased</span>
+                <textarea name="deceasedHouseAddress" rows="3" required></textarea>
+              </label>
+              <label>
+                <span>Pin code</span>
+                <input
+                  name="pinCode"
+                  type="text"
+                  inputmode="numeric"
+                  pattern="[0-9]{6}"
+                  maxlength="6"
+                  required
+                />
+              </label>
+              <label>
+                <span>Death date</span>
+                <input name="deathDate" type="date" required />
+              </label>
+              <label>
+                <span>Death place</span>
+                <select name="deathPlace" required>
+                  <option value="">Select death place</option>
+                  <option value="hospital-death">Hospital death</option>
+                  <option value="home-death">Home death</option>
+                  <option value="on-the-way-to-hospital">On the way to hospital</option>
+                </select>
+              </label>
+              <label>
+                <span>Age at the time of death</span>
+                <input
+                  name="ageAtDeath"
+                  type="number"
+                  inputmode="numeric"
+                  min="0"
+                  max="130"
+                  step="1"
+                  required
+                />
+              </label>
+            </div>
+          </fieldset>
 
           <div class="entry-actions">
             <button id="clear-case-entry" type="button">Clear</button>

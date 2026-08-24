@@ -1,6 +1,7 @@
 import {
   createInsecureWhoVaBrowserDefaults,
   defineWhoVaElement,
+  loadWhoVaWebAttachmentBlob,
   type WhoVaFormElement
 } from "../src/web-component.js";
 import { WHO_VA_2022_LANGUAGES } from "../src/instrument-loader.js";
@@ -15,12 +16,12 @@ interface CaseEntryData {
   subcentre: string;
   uid: string;
   date: string;
-  householdHeadName: string;
   deceasedFullName: string;
   deceasedSex: "female" | "male" | "undetermined";
   deceasedHouseAddress: string;
   pinCode: string;
   deathDate: string;
+  deathPlace: "hospital-death" | "home-death" | "on-the-way-to-hospital";
   ageAtDeath: number;
 }
 
@@ -78,6 +79,17 @@ interface SaveFormEntryPayload {
   status: "case-entry" | "completed";
   submission?: Record<string, unknown>;
   validationIssues?: unknown[];
+}
+
+interface StoredAttachmentResponse {
+  id: string;
+  uri: string;
+  originalName?: string | null;
+  storedName: string;
+  mimeType: string;
+  size: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface StoredCaseEntry {
@@ -299,6 +311,13 @@ const selectedStoredCaseEntry = () => {
   return readStoredCaseEntries().find((entry) => entry.uid === uid);
 };
 
+const formatDeathPlace = (deathPlace?: CaseEntryData["deathPlace"]) => {
+  if (deathPlace === "hospital-death") return "Hospital death";
+  if (deathPlace === "home-death") return "Home death";
+  if (deathPlace === "on-the-way-to-hospital") return "On the way to hospital";
+  return "Not recorded";
+};
+
 let pickerStatusMessage: string | undefined;
 
 const renderSelectedEntrySummary = () => {
@@ -317,12 +336,12 @@ const renderSelectedEntrySummary = () => {
   selectedEntryOutput.textContent = [
     ...(pickerStatusMessage ? [pickerStatusMessage, ""] : []),
     `UID: ${entry.uid}`,
-    `Household head: ${entry.householdHeadName}`,
     `Address: ${entry.deceasedHouseAddress}`,
     `Village: ${entry.villages}`,
     `District: ${entry.district}`,
     `Sex: ${entry.deceasedSex ?? "Not recorded"}`,
     `Death date: ${entry.deathDate}`,
+    `Death place: ${formatDeathPlace(entry.deathPlace)}`,
     `Age at death: ${entry.ageAtDeath}`
   ].join("\n");
 };
@@ -390,12 +409,12 @@ const readCaseEntryData = (sourceForm: HTMLFormElement): CaseEntryData => {
     subcentre: String(formData.get("subcentre") ?? ""),
     uid: String(formData.get("uid") ?? ""),
     date: String(formData.get("date") ?? ""),
-    householdHeadName: String(formData.get("householdHeadName") ?? ""),
     deceasedFullName: String(formData.get("deceasedFullName") ?? ""),
     deceasedSex: String(formData.get("deceasedSex") ?? "") as CaseEntryData["deceasedSex"],
     deceasedHouseAddress: String(formData.get("deceasedHouseAddress") ?? ""),
     pinCode: String(formData.get("pinCode") ?? ""),
     deathDate: String(formData.get("deathDate") ?? ""),
+    deathPlace: String(formData.get("deathPlace") ?? "") as CaseEntryData["deathPlace"],
     ageAtDeath: Number(formData.get("ageAtDeath") ?? 0)
   };
 };
@@ -566,12 +585,98 @@ const readJsonResponse = async <T extends { error?: string }>(response: Response
   }
 };
 
+const isLocalAttachmentReference = (
+  value: unknown
+): value is Record<string, unknown> & {
+  id: string;
+  uri: string;
+} => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.id === "string" &&
+    typeof candidate.uri === "string" &&
+    candidate.uri.startsWith("who-va-attachment:")
+  );
+};
+
+const uploadAttachmentReference = async (
+  reference: Record<string, unknown> & { id: string; uri: string }
+): Promise<Record<string, unknown>> => {
+  const blob = await loadWhoVaWebAttachmentBlob({ id: reference.id });
+  if (!blob) throw new Error(`Attachment ${reference.id} is missing from browser storage.`);
+  const name =
+    typeof reference.name === "string"
+      ? reference.name
+      : typeof reference.originalName === "string"
+        ? reference.originalName
+        : reference.id;
+  const mimeType =
+    typeof reference.mimeType === "string" && reference.mimeType ? reference.mimeType : blob.type;
+  const response = await fetch(`/api/attachments/${encodeURIComponent(reference.id)}`, {
+    method: "PUT",
+    headers: {
+      "content-type": mimeType || "application/octet-stream",
+      "x-attachment-name": encodeURIComponent(name),
+      "x-attachment-size": String(blob.size)
+    },
+    body: blob
+  });
+  const body = await readJsonResponse<{
+    ok: boolean;
+    attachment?: StoredAttachmentResponse;
+    error?: string;
+  }>(response);
+  if (!response.ok || !body.ok || !body.attachment) {
+    throw new Error(
+      body.error ?? `Attachment ${reference.id} could not be saved. Status: ${response.status}.`
+    );
+  }
+  return {
+    ...reference,
+    uri: body.attachment.uri,
+    serverAttachmentId: body.attachment.id,
+    storage: "filesystem",
+    storedName: body.attachment.storedName,
+    serverStored: true
+  };
+};
+
+const uploadAttachmentsInValue = async (
+  value: unknown,
+  uploaded = new Map<string, Promise<Record<string, unknown>>>()
+): Promise<unknown> => {
+  if (isLocalAttachmentReference(value)) {
+    let upload = uploaded.get(value.id);
+    if (!upload) {
+      upload = uploadAttachmentReference(value);
+      uploaded.set(value.id, upload);
+    }
+    return upload;
+  }
+  if (Array.isArray(value)) return Promise.all(value.map((item) => uploadAttachmentsInValue(item, uploaded)));
+  if (!value || typeof value !== "object") return value;
+  const entries = await Promise.all(
+    Object.entries(value as Record<string, unknown>).map(async ([key, nested]) => [
+      key,
+      await uploadAttachmentsInValue(nested, uploaded)
+    ])
+  );
+  return Object.fromEntries(entries);
+};
+
+const uploadAttachmentsInRecord = async (data: Record<string, unknown>): Promise<Record<string, unknown>> =>
+  (await uploadAttachmentsInValue(data)) as Record<string, unknown>;
 const dbDraftStore: WhoVaDraftStore = {
   async save(draft) {
+    const uploadedDraft: WhoVaDraft = {
+      ...draft,
+      data: (await uploadAttachmentsInRecord(draft.data as Record<string, unknown>)) as WhoVaDraft["data"]
+    };
     const response = await fetch(draftsApiUrl(), {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ draft })
+      body: JSON.stringify({ draft: uploadedDraft })
     });
     const body = await readJsonResponse<{ ok: boolean; error?: string }>(response);
     if (!response.ok || !body.ok) {
@@ -608,10 +713,15 @@ form?.addEventListener("who-va-draft-error", (event) => {
 });
 
 const saveFormEntry = async (payload: SaveFormEntryPayload): Promise<SavedFormEntry> => {
+  const uploadedPayload: SaveFormEntryPayload = {
+    ...payload,
+    whoVaData: await uploadAttachmentsInRecord(payload.whoVaData),
+    ...(payload.submission ? { submission: await uploadAttachmentsInRecord(payload.submission) } : {})
+  };
   const response = await fetch(formEntriesApiUrl(), {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(uploadedPayload)
   });
   const responseText = await response.text();
   let body: { ok: boolean; saved?: SavedFormEntry; error?: string } | undefined;

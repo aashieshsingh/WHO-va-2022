@@ -436,6 +436,20 @@ who-va-2022-form [data-testid^="question-card-"]:focus-within {
   line-height: 1.45;
 }
 
+.entry-section {
+  min-width: 0;
+  margin: 0 0 18px;
+  padding: 0;
+  border: 0;
+}
+
+.entry-section legend {
+  margin-bottom: 10px;
+  color: var(--who-2022-web-color-brand-deep);
+  font-size: 0.98rem;
+  font-weight: 750;
+  letter-spacing: 0;
+}
 .entry-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
