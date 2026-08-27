@@ -353,7 +353,36 @@ const characterOnlyCaseEntryFields = {
 const characterOnlyPattern = /^[A-Za-z]+(?: [A-Za-z]+)*$/;
 
 const allowedCaseEntrySexValues = new Set(["female", "male", "undetermined"]);
-const allowedDeathPlaceValues = new Set(["hospital-death", "home-death", "on-the-way-to-hospital"]);
+const allowedDeathPlaceValues = new Set([
+  "hospital-death",
+  "home-death",
+  "on-the-way-to-hospital",
+  "other"
+]);
+const deathPlaceAliases = new Map([
+  ["hospital-death", "hospital-death"],
+  ["hospital death", "hospital-death"],
+  ["hospital", "hospital-death"],
+  ["health facility", "hospital-death"],
+  ["facility", "hospital-death"],
+  ["home-death", "home-death"],
+  ["home death", "home-death"],
+  ["home", "home-death"],
+  ["on-the-way-to-hospital", "on-the-way-to-hospital"],
+  ["on the way to hospital", "on-the-way-to-hospital"],
+  ["on way to hospital", "on-the-way-to-hospital"],
+  ["transit", "on-the-way-to-hospital"],
+  ["other", "other"],
+  ["other place", "other"],
+  ["others", "other"]
+]);
+
+function normalizeDeathPlace(value) {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  const normalized = trimmed.toLowerCase().replace(/[_-]+/gu, " ").replace(/\s+/gu, " ");
+  return deathPlaceAliases.get(trimmed) ?? deathPlaceAliases.get(normalized) ?? "";
+}
 
 function validateCaseEntry(caseEntry) {
   for (const [field, label] of Object.entries(characterOnlyCaseEntryFields)) {
@@ -372,6 +401,7 @@ function validateCaseEntry(caseEntry) {
     throw error;
   }
 
+  caseEntry.deathPlace = normalizeDeathPlace(caseEntry.deathPlace);
   if (!allowedDeathPlaceValues.has(caseEntry.deathPlace)) {
     const error = new Error("Select a valid death place.");
     error.statusCode = 400;

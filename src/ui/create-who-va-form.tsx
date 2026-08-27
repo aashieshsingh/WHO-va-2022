@@ -470,6 +470,22 @@ export function createWhoVaForm(
       );
     }, [instrument, snapshot.data, view]);
 
+    const issueSectionNames = useMemo(() => {
+      const visibleNames = new Set(snapshot.visibleSections.map((section) => section.name));
+      const questionsByName = new Map(instrument.questions.map((question) => [question.name, question]));
+      const names = new Set<string>();
+      const collect = (issue: ValidationIssue) => {
+        const question = questionsByName.get(issue.question);
+        const sectionName = [...(question?.sectionPath ?? [])]
+          .reverse()
+          .find((candidate) => visibleNames.has(candidate));
+        if (sectionName) names.add(sectionName);
+      };
+      snapshot.issues.forEach(collect);
+      Object.values(draftIssues).forEach(collect);
+      return names;
+    }, [draftIssues, instrument.questions, snapshot.issues, snapshot.visibleSections]);
+
     if (view === "preview") {
       return (
         <ScrollView
@@ -529,15 +545,27 @@ export function createWhoVaForm(
         <View style={styles.sectionSwitcher}>
           {snapshot.visibleSections.map((section, index) => {
             const isActive = section.name === snapshot.currentSection.name;
+            const hasSectionIssues = issueSectionNames.has(section.name);
             return (
               <Pressable
                 accessibilityRole="button"
                 accessibilityState={{ selected: isActive }}
+                aria-invalid={hasSectionIssues || undefined}
                 key={section.name}
                 onPress={() => switchSection(section.name)}
-                style={[styles.sectionButton, isActive && styles.sectionButtonActive]}
+                style={[
+                  styles.sectionButton,
+                  hasSectionIssues && !isActive && styles.sectionButtonError,
+                  isActive && styles.sectionButtonActive
+                ]}
               >
-                <Text style={[styles.sectionButtonText, isActive && styles.sectionButtonTextActive]}>
+                <Text
+                  style={[
+                    styles.sectionButtonText,
+                    hasSectionIssues && !isActive && styles.sectionButtonTextError,
+                    isActive && styles.sectionButtonTextActive
+                  ]}
+                >
                   {index + 1}. {localized(section.label, locale, section.name)}
                 </Text>
               </Pressable>

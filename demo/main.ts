@@ -8,6 +8,8 @@ import { WHO_VA_2022_LANGUAGES } from "../src/instrument-loader.js";
 import { createWhoVaInitialDataFromPrefill } from "../src/prefill.js";
 import type { WhoVaDraft, WhoVaDraftStore } from "../src/types.js";
 
+type DeathPlace = "hospital-death" | "home-death" | "on-the-way-to-hospital" | "other";
+
 interface CaseEntryData {
   district: string;
   block: string;
@@ -21,7 +23,7 @@ interface CaseEntryData {
   deceasedHouseAddress: string;
   pinCode: string;
   deathDate: string;
-  deathPlace: "hospital-death" | "home-death" | "on-the-way-to-hospital";
+  deathPlace: DeathPlace;
   ageAtDeath: number;
 }
 
@@ -194,6 +196,43 @@ let currentCaseEntry: CaseEntryData | undefined;
 let currentWhoVaData: Record<string, unknown> | undefined;
 let currentUser: RegisteredUser | undefined;
 
+const deathPlaceLabels: Record<DeathPlace, string> = {
+  "hospital-death": "Hospital death",
+  "home-death": "Home death",
+  "on-the-way-to-hospital": "On the way to hospital",
+  other: "Other place"
+};
+
+const deathPlaceAliases = new Map<string, DeathPlace>([
+  ["hospital-death", "hospital-death"],
+  ["hospital death", "hospital-death"],
+  ["hospital", "hospital-death"],
+  ["health facility", "hospital-death"],
+  ["facility", "hospital-death"],
+  ["home-death", "home-death"],
+  ["home death", "home-death"],
+  ["home", "home-death"],
+  ["on-the-way-to-hospital", "on-the-way-to-hospital"],
+  ["on the way to hospital", "on-the-way-to-hospital"],
+  ["on way to hospital", "on-the-way-to-hospital"],
+  ["transit", "on-the-way-to-hospital"],
+  ["other", "other"],
+  ["other place", "other"],
+  ["others", "other"]
+]);
+
+const normalizeDeathPlace = (value: unknown): DeathPlace | "" => {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  const normalized = trimmed.toLowerCase().replace(/[_-]+/gu, " ").replace(/\s+/gu, " ");
+  return deathPlaceAliases.get(trimmed) ?? deathPlaceAliases.get(normalized) ?? "";
+};
+
+const normalizeCaseEntry = (entry: CaseEntryData): CaseEntryData => ({
+  ...entry,
+  deathPlace: normalizeDeathPlace(entry.deathPlace) as CaseEntryData["deathPlace"]
+});
+
 const createEntryUid = () => {
   const randomPart = crypto.getRandomValues(new Uint32Array(1))[0].toString(36).padStart(7, "0");
   return `VA-${Date.now().toString(36).toUpperCase()}-${randomPart.toUpperCase()}`;
@@ -245,11 +284,13 @@ const readStoredCaseEntries = (): StoredCaseEntry[] => {
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter((entry): entry is StoredCaseEntry => {
-      if (!entry || typeof entry !== "object") return false;
-      const candidate = entry as Partial<StoredCaseEntry>;
-      return Boolean(candidate.uid && candidate.caseEntry && candidate.whoVaData);
-    });
+    return parsed
+      .filter((entry): entry is StoredCaseEntry => {
+        if (!entry || typeof entry !== "object") return false;
+        const candidate = entry as Partial<StoredCaseEntry>;
+        return Boolean(candidate.uid && candidate.caseEntry && candidate.whoVaData);
+      })
+      .map((entry) => ({ ...entry, caseEntry: normalizeCaseEntry(entry.caseEntry) }));
   } catch {
     return [];
   }
@@ -260,8 +301,14 @@ const writeStoredCaseEntries = (entries: StoredCaseEntry[]) => {
 };
 
 const rememberCaseEntry = (caseEntry: CaseEntryData, whoVaData: Record<string, unknown>) => {
-  const entries = readStoredCaseEntries().filter((entry) => entry.uid !== caseEntry.uid);
-  entries.unshift({ uid: caseEntry.uid, caseEntry, whoVaData, updatedAt: new Date().toISOString() });
+  const normalizedCaseEntry = normalizeCaseEntry(caseEntry);
+  const entries = readStoredCaseEntries().filter((entry) => entry.uid !== normalizedCaseEntry.uid);
+  entries.unshift({
+    uid: normalizedCaseEntry.uid,
+    caseEntry: normalizedCaseEntry,
+    whoVaData,
+    updatedAt: new Date().toISOString()
+  });
   writeStoredCaseEntries(entries.slice(0, 100));
 };
 
@@ -278,12 +325,15 @@ const loadSavedCaseEntries = async (): Promise<StoredCaseEntry[]> => {
     throw new Error(body.error ?? `Saved entries could not be loaded. Status: ${response.status}.`);
   }
   return (body.entries ?? [])
-    .map((entry) => ({
-      uid: entry.uid,
-      caseEntry: entry.caseEntry ?? entry.case_entry,
-      whoVaData: entry.whoVaData ?? entry.who_va_prefill ?? {},
-      updatedAt: entry.updatedAt ?? entry.updated_at
-    }))
+    .map((entry) => {
+      const caseEntry = entry.caseEntry ?? entry.case_entry;
+      return {
+        uid: entry.uid,
+        caseEntry: caseEntry ? normalizeCaseEntry(caseEntry) : undefined,
+        whoVaData: entry.whoVaData ?? entry.who_va_prefill ?? {},
+        updatedAt: entry.updatedAt ?? entry.updated_at
+      };
+    })
     .filter((entry): entry is StoredCaseEntry =>
       Boolean(entry.uid && entry.caseEntry?.deceasedFullName && entry.updatedAt)
     );
@@ -312,9 +362,8 @@ const selectedStoredCaseEntry = () => {
 };
 
 const formatDeathPlace = (deathPlace?: CaseEntryData["deathPlace"]) => {
-  if (deathPlace === "hospital-death") return "Hospital death";
-  if (deathPlace === "home-death") return "Home death";
-  if (deathPlace === "on-the-way-to-hospital") return "On the way to hospital";
+  const normalized = normalizeDeathPlace(deathPlace);
+  if (normalized) return deathPlaceLabels[normalized];
   return "Not recorded";
 };
 
@@ -393,7 +442,7 @@ const clearEntryFormValues = () => {
 
 const fillCaseEntryForm = (entry: CaseEntryData) => {
   if (!entryForm) return;
-  for (const [name, value] of Object.entries(entry)) {
+  for (const [name, value] of Object.entries(normalizeCaseEntry(entry))) {
     const control = entryForm.elements.namedItem(name) as HTMLInputElement | HTMLTextAreaElement | null;
     if (control) control.value = String(value);
   }
@@ -414,9 +463,22 @@ const readCaseEntryData = (sourceForm: HTMLFormElement): CaseEntryData => {
     deceasedHouseAddress: String(formData.get("deceasedHouseAddress") ?? ""),
     pinCode: String(formData.get("pinCode") ?? ""),
     deathDate: String(formData.get("deathDate") ?? ""),
-    deathPlace: String(formData.get("deathPlace") ?? "") as CaseEntryData["deathPlace"],
+    deathPlace: normalizeDeathPlace(formData.get("deathPlace")) as CaseEntryData["deathPlace"],
     ageAtDeath: Number(formData.get("ageAtDeath") ?? 0)
   };
+};
+
+const validateCaseEntryData = (data: CaseEntryData): string | undefined => {
+  if (!data.deathPlace) {
+    return "Select a valid death place: Hospital death, Home death, On the way to hospital, or Other place.";
+  }
+  return undefined;
+};
+
+const focusDeathPlaceControl = () => {
+  const control = entryForm?.elements.namedItem("deathPlace") as HTMLSelectElement | null;
+  control?.focus();
+  control?.scrollIntoView({ block: "center" });
 };
 
 const createWhoVaDataFromCaseEntry = (entry: CaseEntryData) => {
@@ -539,16 +601,17 @@ const showRolePage = (user: RegisteredUser) => {
 };
 
 const applyCaseEntryToInstrument = async (caseEntry: CaseEntryData, whoVaData: Record<string, unknown>) => {
-  currentCaseEntry = caseEntry;
+  const normalizedCaseEntry = normalizeCaseEntry(caseEntry);
+  currentCaseEntry = normalizedCaseEntry;
   currentWhoVaData = whoVaData;
-  form?.setAttribute("draft-id", caseEntry.uid);
+  form?.setAttribute("draft-id", normalizedCaseEntry.uid);
   form?.setLockedQuestionNames(Object.keys(whoVaData));
   form?.setData(whoVaData);
   setVisibleStep("instrument");
   whoVaShell?.scrollIntoView({ block: "start" });
 
   try {
-    const savedDraft = await dbDraftStore.load(caseEntry.uid);
+    const savedDraft = await dbDraftStore.load(normalizedCaseEntry.uid);
     if (savedDraft) form?.setData(savedDraft.data);
   } catch (error) {
     console.warn("Could not load saved WHO VA draft", error);
@@ -1067,6 +1130,12 @@ entryForm?.addEventListener("submit", (event) => {
 
     try {
       const entry = readCaseEntryData(entryForm);
+      const validationError = validateCaseEntryData(entry);
+      if (validationError) {
+        showEntryOutput(validationError);
+        focusDeathPlaceControl();
+        return;
+      }
       const whoVaData = createWhoVaDataFromCaseEntry(entry);
       const saved = await saveFormEntry({
         uid: entry.uid,
@@ -1116,6 +1185,14 @@ form?.addEventListener("who-va-complete", (event) => {
     if (!currentCaseEntry || !currentWhoVaData) return;
     if (!currentUser?.userId) {
       showEntryOutput("Login before submitting WHO VA data.");
+      return;
+    }
+    const validationError = validateCaseEntryData(currentCaseEntry);
+    if (validationError) {
+      showEntryOutput(validationError);
+      setVisibleStep("entry");
+      fillCaseEntryForm(currentCaseEntry);
+      focusDeathPlaceControl();
       return;
     }
     const result = (event as CustomEvent).detail as {

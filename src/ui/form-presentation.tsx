@@ -131,11 +131,16 @@ export const formStyles = {
     { backgroundColor: "#12372d", borderColor: "#12372d" },
     { backgroundColor: "brandDeep", borderColor: "brandDeep" }
   ),
+  sectionButtonError: withWebTheme(
+    { backgroundColor: "#fff1f0", borderColor: "#d66552" },
+    { backgroundColor: "dangerSoft", borderColor: "dangerBorder" }
+  ),
   sectionButtonText: withWebTheme(
     { color: "#183d33", fontSize: 13, fontWeight: "700" as const },
     { color: "ink" }
   ),
   sectionButtonTextActive: { color: "#ffffff" },
+  sectionButtonTextError: withWebTheme({ color: "#8c3022" }, { color: "dangerStrong" }),
   sectionTitle: withWebTheme(
     { color: "#12372d", fontSize: 24, fontWeight: "700" as const, marginBottom: 18 },
     { color: "brandDeep" }

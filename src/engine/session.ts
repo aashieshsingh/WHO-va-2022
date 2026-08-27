@@ -47,6 +47,21 @@ function blocksDraftMutation(issue: ValidationIssue): boolean {
   return issue.code === "type" || issue.code === "choice" || issue.code === "unsupported-expression";
 }
 
+function issueSection(
+  instrument: InstrumentDefinition,
+  visibleSections: readonly InstrumentSection[],
+  issue: ValidationIssue
+): InstrumentSection | undefined {
+  const question = getInstrumentRuntimeIndex(instrument).questionsByName.get(issue.question);
+  if (!question) return undefined;
+  const visibleByName = new Map(visibleSections.map((section) => [section.name, section]));
+  for (const sectionName of [...question.sectionPath].reverse()) {
+    const section = visibleByName.get(sectionName);
+    if (section) return section;
+  }
+  return undefined;
+}
+
 class UniversalWhoVaSession implements WhoVaSession {
   private data: SubmissionData;
   private currentSectionName: string;
@@ -290,9 +305,16 @@ class UniversalWhoVaSession implements WhoVaSession {
     const next = sections[index + 1];
     if (!next) {
       const completed = this.complete();
-      return completed.valid
-        ? { status: "completed", advanced: true, completed: true, issues: [], result: completed }
-        : { status: "blocked", advanced: false, completed: false, issues: completed.issues };
+      if (completed.valid) {
+        return { status: "completed", advanced: true, completed: true, issues: [], result: completed };
+      }
+      const firstIssueSection = issueSection(this.instrument, sections, completed.issues[0]);
+      if (firstIssueSection && firstIssueSection.name !== this.currentSectionName) {
+        this.currentSectionName = firstIssueSection.name;
+        this.issues = completed.issues;
+        this.notify();
+      }
+      return { status: "blocked", advanced: false, completed: false, issues: completed.issues };
     }
     this.currentSectionName = next.name;
     this.issues = [];

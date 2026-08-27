@@ -112,6 +112,49 @@ const requiredControlInstrument: InstrumentDefinition = {
     }
   ]
 };
+const crossSectionInstrument: InstrumentDefinition = {
+  id: "cross-section-validation-test",
+  title: "Cross-section validation test",
+  version: "1",
+  defaultLanguage: "English (en)",
+  sourceFile: "generated-test-artifact.json",
+  sections: [
+    { name: "identity", sourceRow: 1, order: 1, label: { en: "Identity" } },
+    { name: "details", sourceRow: 3, order: 2, label: { en: "Details" } }
+  ],
+  questions: [
+    {
+      name: "required_name",
+      order: 1,
+      sourceRow: 2,
+      sourceType: "text",
+      dataType: "string",
+      control: "text",
+      label: { en: "Required name" },
+      hint: {},
+      guidance: {},
+      required: true,
+      readOnly: false,
+      constraintMessage: {},
+      sectionPath: ["identity"]
+    },
+    {
+      name: "case_detail",
+      order: 2,
+      sourceRow: 4,
+      sourceType: "text",
+      dataType: "string",
+      control: "text",
+      label: { en: "Case detail" },
+      hint: {},
+      guidance: {},
+      required: true,
+      readOnly: false,
+      constraintMessage: {},
+      sectionPath: ["details"]
+    }
+  ]
+};
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -238,6 +281,47 @@ describe("validation navigation", () => {
 
     const input = container.querySelector<HTMLInputElement>('[data-testid="question-required_name"]');
     expect(document.activeElement).toBe(input);
+
+    root.unmount();
+  });
+
+  it("returns to the incomplete section when final completion validation fails", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<WhoVaForm instrument={crossSectionInstrument} />);
+    });
+
+    const details = Array.from(container.querySelectorAll<HTMLElement>('[role="button"]')).find(
+      (button) => button.textContent === "2. Details"
+    );
+    await act(async () => {
+      details?.click();
+    });
+
+    const input = container.querySelector<HTMLInputElement>('[data-testid="question-case_detail"]');
+    const setNativeValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    await act(async () => {
+      setNativeValue?.call(input, "Completed detail");
+      input?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    const complete = Array.from(container.querySelectorAll<HTMLElement>('[role="button"]')).find(
+      (button) => button.textContent === "Complete"
+    );
+    await act(async () => {
+      complete?.click();
+    });
+
+    await vi.waitFor(() => expect(container.textContent).toContain("Required name is required"));
+    expect(container.textContent).toContain("Identity");
+    expect(container.querySelector('[data-testid="question-required_name"]')).not.toBeNull();
+    expect(
+      Array.from(container.querySelectorAll<HTMLElement>('[role="button"]')).find(
+        (button) => button.textContent === "1. Identity"
+      )?.getAttribute("aria-invalid")
+    ).toBe("true");
 
     root.unmount();
   });
