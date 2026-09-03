@@ -404,6 +404,8 @@ pnpm check
 pnpm check:all    # full package gate plus Chromium end-to-end tests
 ```
 
+The demo server persists entries in PostgreSQL. By default it connects to `localhost:5433`, user `postgres`, database `whova`, with the local demo password `aiims@123`. Override it with `DATABASE_URL` or `PGPASSWORD` when your local PostgreSQL uses different credentials.
+
 Install the pinned Playwright browser once with `pnpm exec playwright install chromium`. The browser suite enters answers through the rendered controls, captures validation errors and corrected states, verifies the visible age summary and calculated values derived from `Id10021`, and confirms valid paths can advance without alerts. GitHub Actions runs both `pnpm check` and the Chromium suite.
 
 Canonical artifacts:

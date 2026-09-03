@@ -7,8 +7,17 @@ import { useDemoState } from "../components/DemoState";
 
 export default function HomeRoute() {
   const router = useRouter();
-  const { cases, completed, currentUser, drafts, isDatabaseReady, latestDraft, login, logout } =
-    useDemoState();
+  const {
+    cases,
+    completed,
+    currentUser,
+    defaultApiBaseUrl,
+    drafts,
+    isDatabaseReady,
+    latestDraft,
+    login,
+    logout
+  } = useDemoState();
   const [apiBaseUrl, setApiBaseUrl] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -29,7 +38,7 @@ export default function HomeRoute() {
               autoCapitalize="none"
               keyboardType="url"
               onChangeText={setApiBaseUrl}
-              placeholder="http://192.168.1.25:5173"
+              placeholder={defaultApiBaseUrl}
               style={styles.textInput}
               value={apiBaseUrl}
             />

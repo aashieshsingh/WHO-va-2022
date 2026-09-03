@@ -22,7 +22,7 @@ The package is ESM-only. React is required by the UI entry points; React DOM, Re
 pnpm dev
 ```
 
-This starts the Vite demo at `http://127.0.0.1:5173`. The demo uses the same web entry point published by the package.
+This starts the Vite demo at `http://127.0.0.1:5173`. The demo uses the same web entry point published by the package. It also runs the local PostgreSQL-backed demo server, using `localhost:5433`, user `postgres`, database `whova`, and demo password `aiims@123` by default. Override the connection with `DATABASE_URL` or `PGPASSWORD` when your local PostgreSQL uses different credentials.
 
 Useful commands:
 

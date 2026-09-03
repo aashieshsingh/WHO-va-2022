@@ -49,6 +49,7 @@ export interface CaseEntryData {
   deceasedHouseAddress: string;
   pinCode: string;
   deathDate: string;
+  deathPlace: "hospital-death" | "home-death" | "on-the-way-to-hospital" | "other";
   ageAtDeath: number;
 }
 

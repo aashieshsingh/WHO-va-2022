@@ -104,6 +104,22 @@ export interface WhoVaNavigationAdapter {
   subscribe(listener: (state: WhoVaNavigationState | undefined) => void): () => void;
 }
 
+function sectionSliderState(snapshot: SessionSnapshot) {
+  const activeIndex = Math.max(
+    0,
+    snapshot.visibleSections.findIndex((section) => section.name === snapshot.currentSection.name)
+  );
+  const sectionCount = snapshot.visibleSections.length;
+
+  return {
+    activeIndex,
+    canGoBack: activeIndex > 0,
+    canGoForward: activeIndex < sectionCount - 1,
+    previousSection: snapshot.visibleSections[activeIndex - 1],
+    nextSection: snapshot.visibleSections[activeIndex + 1]
+  };
+}
+
 export function createWhoVaForm(
   primitives: WhoVaPrimitiveSet,
   loadDefaultInstrument?: () => Promise<InstrumentDefinition>
@@ -122,6 +138,110 @@ export function createWhoVaForm(
     Image: primitives.Image,
     platform: primitives.platform
   });
+
+  function SectionSwitcher({
+    issueSectionNames,
+    locale,
+    messages,
+    snapshot,
+    switchSection
+  }: {
+    issueSectionNames: ReadonlySet<string>;
+    locale: string;
+    messages: ReturnType<typeof resolveUiMessages>;
+    snapshot: SessionSnapshot;
+    switchSection: (sectionName: string) => void;
+  }) {
+    const sectionSlider = sectionSliderState(snapshot);
+    const sectionTrackRef = useRef<unknown>(null);
+
+    useEffect(() => {
+      const scrollView = sectionTrackRef.current as {
+        scrollTo?: (options: { animated: boolean; x: number }) => void;
+      } | null;
+      scrollView?.scrollTo?.({ x: Math.max(sectionSlider.activeIndex - 1, 0) * 120, animated: true });
+    }, [sectionSlider.activeIndex]);
+
+    return (
+      <View testID="section-switcher" style={styles.sectionSwitcher}>
+        <Pressable
+          accessibilityLabel={messages.back}
+          accessibilityRole="button"
+          disabled={!sectionSlider.canGoBack}
+          onPress={() => sectionSlider.previousSection && switchSection(sectionSlider.previousSection.name)}
+          style={[styles.sectionSliderButton, !sectionSlider.canGoBack && styles.sectionSliderButtonDisabled]}
+        >
+          <Text
+            style={[
+              styles.sectionSliderButtonText,
+              !sectionSlider.canGoBack && styles.sectionSliderButtonTextDisabled
+            ]}
+          >
+            {"<"}
+          </Text>
+        </Pressable>
+        <ScrollView
+          ref={sectionTrackRef}
+          testID="section-slider"
+          contentContainerStyle={styles.sectionSwitcherTrack}
+          horizontal
+          keyboardShouldPersistTaps="handled"
+          showsHorizontalScrollIndicator={false}
+          style={styles.sectionSwitcherViewport}
+        >
+          {snapshot.visibleSections.map((section, index) => {
+            const isActive = section.name === snapshot.currentSection.name;
+            const hasSectionIssues = issueSectionNames.has(section.name);
+            return (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ selected: isActive }}
+                testID="section-slider-item"
+                aria-invalid={hasSectionIssues || undefined}
+                key={section.name}
+                onPress={() => switchSection(section.name)}
+                style={[
+                  styles.sectionButton,
+                  hasSectionIssues && !isActive && styles.sectionButtonError,
+                  isActive && styles.sectionButtonActive
+                ]}
+              >
+                <Text
+                  numberOfLines={2}
+                  style={[
+                    styles.sectionButtonText,
+                    hasSectionIssues && !isActive && styles.sectionButtonTextError,
+                    isActive && styles.sectionButtonTextActive
+                  ]}
+                >
+                  {index + 1}. {localized(section.label, locale, section.name)}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+        <Pressable
+          accessibilityLabel={messages.next}
+          accessibilityRole="button"
+          disabled={!sectionSlider.canGoForward}
+          onPress={() => sectionSlider.nextSection && switchSection(sectionSlider.nextSection.name)}
+          style={[
+            styles.sectionSliderButton,
+            !sectionSlider.canGoForward && styles.sectionSliderButtonDisabled
+          ]}
+        >
+          <Text
+            style={[
+              styles.sectionSliderButtonText,
+              !sectionSlider.canGoForward && styles.sectionSliderButtonTextDisabled
+            ]}
+          >
+            {">"}
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   function ReadyForm(props: WhoVaFormProps & { resolvedInstrument: InstrumentDefinition }) {
     if (props.session && props.initialData !== undefined) {
@@ -542,36 +662,13 @@ export function createWhoVaForm(
         <Text style={styles.progress}>
           {messages.sectionProgress(snapshot.currentSectionIndex + 1, snapshot.visibleSectionCount)}
         </Text>
-        <View style={styles.sectionSwitcher}>
-          {snapshot.visibleSections.map((section, index) => {
-            const isActive = section.name === snapshot.currentSection.name;
-            const hasSectionIssues = issueSectionNames.has(section.name);
-            return (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{ selected: isActive }}
-                aria-invalid={hasSectionIssues || undefined}
-                key={section.name}
-                onPress={() => switchSection(section.name)}
-                style={[
-                  styles.sectionButton,
-                  hasSectionIssues && !isActive && styles.sectionButtonError,
-                  isActive && styles.sectionButtonActive
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.sectionButtonText,
-                    hasSectionIssues && !isActive && styles.sectionButtonTextError,
-                    isActive && styles.sectionButtonTextActive
-                  ]}
-                >
-                  {index + 1}. {localized(section.label, locale, section.name)}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
+        <SectionSwitcher
+          issueSectionNames={issueSectionNames}
+          locale={locale}
+          messages={messages}
+          snapshot={snapshot}
+          switchSection={switchSection}
+        />
         <Text style={styles.sectionTitle}>
           {localized(snapshot.currentSection.label, locale, snapshot.currentSection.name)}
         </Text>

@@ -107,11 +107,24 @@ export const formStyles = {
   ),
   progress: withWebTheme({ color: "#47625b", marginBottom: 6, fontSize: 13 }, { color: "muted" }),
   sectionSwitcher: {
+    alignItems: "center" as const,
     columnGap: 8,
     flexDirection: "row" as const,
-    flexWrap: "wrap" as const,
+    flexWrap: "nowrap" as const,
     marginBottom: 12,
     rowGap: 8
+  },
+  sectionSwitcherViewport: {
+    flex: 1,
+    maxWidth: 472,
+    overflowX: "auto" as const,
+    overflowY: "hidden" as const
+  },
+  sectionSwitcherTrack: {
+    columnGap: 8,
+    flexDirection: "row" as const,
+    flexWrap: "nowrap" as const,
+    paddingVertical: 1
   },
   sectionButton: withWebTheme(
     {
@@ -122,10 +135,31 @@ export const formStyles = {
       borderWidth: 1,
       justifyContent: "center" as const,
       minHeight: 38,
+      minWidth: 112,
+      width: 112,
       paddingHorizontal: 12,
       paddingVertical: 8
     },
     { backgroundColor: "surface", borderColor: "border" }
+  ),
+  sectionSliderButton: withWebTheme(
+    {
+      alignItems: "center" as const,
+      backgroundColor: "#ffffff",
+      borderColor: "#dce6e1",
+      borderRadius: 8,
+      borderWidth: 1,
+      justifyContent: "center" as const,
+      minHeight: 38,
+      minWidth: 38,
+      paddingHorizontal: 0,
+      paddingVertical: 0
+    },
+    { backgroundColor: "surface", borderColor: "border" }
+  ),
+  sectionSliderButtonDisabled: withWebTheme(
+    { backgroundColor: "#eef3f0", borderColor: "#dce6e1", opacity: 0.55 },
+    { backgroundColor: "canvas", borderColor: "border" }
   ),
   sectionButtonActive: withWebTheme(
     { backgroundColor: "#12372d", borderColor: "#12372d" },
@@ -136,9 +170,14 @@ export const formStyles = {
     { backgroundColor: "dangerSoft", borderColor: "dangerBorder" }
   ),
   sectionButtonText: withWebTheme(
-    { color: "#183d33", fontSize: 13, fontWeight: "700" as const },
+    { color: "#183d33", fontSize: 13, fontWeight: "700" as const, textAlign: "center" as const },
     { color: "ink" }
   ),
+  sectionSliderButtonText: withWebTheme(
+    { color: "#183d33", fontSize: 18, fontWeight: "700" as const, lineHeight: 20 },
+    { color: "ink" }
+  ),
+  sectionSliderButtonTextDisabled: withWebTheme({ color: "#8ca099" }, { color: "muted" }),
   sectionButtonTextActive: { color: "#ffffff" },
   sectionButtonTextError: withWebTheme({ color: "#8c3022" }, { color: "dangerStrong" }),
   sectionTitle: withWebTheme(

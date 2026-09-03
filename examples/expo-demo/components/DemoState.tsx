@@ -1,3 +1,4 @@
+import Constants from "expo-constants";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { createWhoVaInitialDataFromPrefill } from "@drguptavivek/who-2022-va";
@@ -45,6 +46,7 @@ interface DemoState {
   lastUpdate: string;
   newFormKey: number;
   users: RegisteredUser[];
+  defaultApiBaseUrl: string;
   addCompleted(result: SubmissionValidationResult, caseEntry?: CaseEntryData): void;
   beginNewInterview(): void;
   getDraft(id: string | undefined): WhoVaDraft | undefined;
@@ -56,7 +58,14 @@ interface DemoState {
   setLastUpdate(message: string): void;
 }
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_WHO_VA_API_URL ?? "http://127.0.0.1:5173";
+function apiBaseUrlFromExpoHost(): string | undefined {
+  const hostUri = Constants.expoConfig?.hostUri ?? Constants.manifest2?.extra?.expoClient?.hostUri;
+  const host = typeof hostUri === "string" ? hostUri.split(":")[0] : undefined;
+  return host ? `http://${host}:5173` : undefined;
+}
+
+const API_BASE_URL =
+  process.env.EXPO_PUBLIC_WHO_VA_API_URL ?? apiBaseUrlFromExpoHost() ?? "http://127.0.0.1:5173";
 
 const DemoStateContext = createContext<DemoState | undefined>(undefined);
 
@@ -173,6 +182,7 @@ export function DemoStateProvider({ children }: { children: ReactNode }) {
       currentUser,
       draftStore,
       drafts,
+      defaultApiBaseUrl: API_BASE_URL,
       getDraft(id) {
         if (!id) return undefined;
         return drafts.find((draft) => draft.id === id);
@@ -282,6 +292,7 @@ export function emptyCaseEntry(): CaseEntryData {
     deceasedHouseAddress: "",
     pinCode: "",
     deathDate: "",
+    deathPlace: "home-death",
     ageAtDeath: 0
   };
 }

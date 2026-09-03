@@ -17,6 +17,7 @@
         <button id="show-registration" type="button">Register user</button>
         <button id="show-dashboard" type="button" hidden>Dashboard</button>
         <button id="new-case-entry" type="button">Case data entry</button>
+        <button id="logout-user" type="button" hidden>Logout</button>
         <button id="header-start-selected-entry" class="start-selected-entry" type="button" disabled>
           Fill WHO VA 2022 Instrument
         </button>
@@ -253,10 +254,7 @@
                   required
                 />
               </label>
-              <label>
-                <span>Date</span>
-                <input name="date" type="date" required />
-              </label>
+              <input name="date" type="hidden" />
             </div>
           </fieldset>
 

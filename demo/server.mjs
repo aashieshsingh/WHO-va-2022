@@ -1,6 +1,7 @@
 import { randomBytes, timingSafeEqual, scryptSync } from "node:crypto";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { createServer as createHttpServer } from "node:http";
+import { networkInterfaces } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -17,17 +18,63 @@ const attachmentStorageRoot = path.resolve(
   process.env.WHO_VA_ATTACHMENT_DIR ?? path.join(__dirname, "uploads", "attachments")
 );
 
-const corsHeaders = {
-  "access-control-allow-origin": "*",
-  "access-control-allow-methods": "DELETE,GET,POST,PUT,OPTIONS",
-  "access-control-allow-headers": "content-type,x-attachment-name,x-attachment-size"
+const allowedOrigins = new Set(
+  (process.env.WHO_VA_ALLOWED_ORIGINS ?? `http://127.0.0.1:${PORT},http://localhost:${PORT}`)
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+);
+
+const apiSecurityHeaders = {
+  "cache-control": "no-store",
+  "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+  "cross-origin-resource-policy": "same-origin",
+  "referrer-policy": "no-referrer",
+  "x-content-type-options": "nosniff"
 };
 
-async function readJsonBody(request) {
+function corsHeadersFor(request) {
+  const origin = request.headers.origin;
+  if (typeof origin !== "string" || !allowedOrigins.has(origin)) return {};
+  return {
+    "access-control-allow-origin": origin,
+    vary: "Origin"
+  };
+}
+
+function apiHeaders(request, extraHeaders = {}) {
+  return {
+    ...apiSecurityHeaders,
+    ...corsHeadersFor(request),
+    ...extraHeaders
+  };
+}
+
+const corsPreflightHeaders = {
+  "access-control-allow-methods": "DELETE,GET,POST,PUT,OPTIONS",
+  "access-control-allow-headers":
+    "content-type,x-attachment-name,x-attachment-size,x-user-id,x-auth-key,x-setup-key",
+  "access-control-max-age": "600"
+};
+
+async function readJsonBody(request, maxBytes = 5 * 1024 * 1024) {
+  const contentType = String(request.headers["content-type"] ?? "")
+    .split(";")[0]
+    .toLowerCase();
+  if (contentType !== "application/json") throw badRequest("Request content type must be application/json");
   const chunks = [];
-  for await (const chunk of request) chunks.push(chunk);
+  let totalBytes = 0;
+  for await (const chunk of request) {
+    totalBytes += chunk.length;
+    if (totalBytes > maxBytes) throw badRequest("JSON body exceeds the maximum request size");
+    chunks.push(chunk);
+  }
   if (chunks.length === 0) return {};
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    throw badRequest("Request body must be valid JSON");
+  }
 }
 
 async function readRawBody(request, maxBytes = 30 * 1024 * 1024) {
@@ -41,11 +88,10 @@ async function readRawBody(request, maxBytes = 30 * 1024 * 1024) {
   return Buffer.concat(chunks);
 }
 
-function sendJson(response, statusCode, body) {
+function sendJson(request, response, statusCode, body) {
   response.writeHead(statusCode, {
     "content-type": "application/json; charset=utf-8",
-    "cache-control": "no-store",
-    ...corsHeaders
+    ...apiHeaders(request)
   });
   response.end(JSON.stringify(body));
 }
@@ -84,6 +130,48 @@ function verifyPassword(password, storedHash) {
   return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
+const loginFailures = new Map();
+const loginWindowMs = 15 * 60 * 1000;
+const maxLoginFailures = 5;
+
+function requestIp(request) {
+  return request.socket.remoteAddress ?? "unknown";
+}
+
+function loginRateLimitKey(request, identifier) {
+  return `${requestIp(request)}:${String(identifier).trim().toLowerCase()}`;
+}
+
+function assertLoginAllowed(request, identifier) {
+  const key = loginRateLimitKey(request, identifier);
+  const now = Date.now();
+  const failure = loginFailures.get(key);
+  if (!failure || failure.resetAt <= now) {
+    loginFailures.delete(key);
+    return;
+  }
+  if (failure.count >= maxLoginFailures) {
+    const error = new Error("Too many login attempts. Try again later.");
+    error.statusCode = 429;
+    throw error;
+  }
+}
+
+function recordLoginFailure(request, identifier) {
+  const key = loginRateLimitKey(request, identifier);
+  const now = Date.now();
+  const current = loginFailures.get(key);
+  if (!current || current.resetAt <= now) {
+    loginFailures.set(key, { count: 1, resetAt: now + loginWindowMs });
+    return;
+  }
+  current.count += 1;
+}
+
+function clearLoginFailures(request, identifier) {
+  loginFailures.delete(loginRateLimitKey(request, identifier));
+}
+
 function badRequest(message) {
   const error = new Error(message);
   error.statusCode = 400;
@@ -101,7 +189,6 @@ const attachmentMimeExtensions = new Map([
   ["image/jpeg", ".jpg"],
   ["application/pdf", ".pdf"],
   ["audio/webm", ".webm"],
-  ["audio/webm;codecs=opus", ".webm"],
   ["audio/mp4", ".m4a"],
   ["audio/ogg", ".ogg"]
 ]);
@@ -115,11 +202,38 @@ function extensionForAttachment(mimeType, originalName = "") {
   const normalized = String(mimeType).toLowerCase();
   const exact = attachmentMimeExtensions.get(normalized);
   if (exact) return exact;
-  if (normalized.startsWith("image/jpeg")) return ".jpg";
-  if (normalized.startsWith("audio/webm")) return ".webm";
-  const originalExtension = path.extname(originalName).toLowerCase();
-  if (/^\.[a-z0-9]{1,8}$/u.test(originalExtension)) return originalExtension;
-  return ".bin";
+  throw badRequest(`Attachment content type is not allowed: ${originalName || normalized}`);
+}
+
+function isPathInside(root, candidate) {
+  const relative = path.relative(root, candidate);
+  return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+}
+
+function validateAttachmentBytes(contentType, bytes) {
+  const byte = (index) => bytes[index];
+  if (contentType === "image/jpeg") {
+    if (byte(0) === 0xff && byte(1) === 0xd8 && byte(2) === 0xff) return;
+    throw badRequest("Attachment body is not a valid JPEG");
+  }
+  if (contentType === "application/pdf") {
+    if (byte(0) === 0x25 && byte(1) === 0x50 && byte(2) === 0x44 && byte(3) === 0x46) return;
+    throw badRequest("Attachment body is not a valid PDF");
+  }
+  if (contentType === "audio/webm") {
+    if (byte(0) === 0x1a && byte(1) === 0x45 && byte(2) === 0xdf && byte(3) === 0xa3) return;
+    throw badRequest("Attachment body is not a valid WebM file");
+  }
+  if (contentType === "audio/mp4") {
+    const brandMarker = Buffer.from(bytes.subarray(4, 8)).toString("ascii");
+    if (brandMarker === "ftyp") return;
+    throw badRequest("Attachment body is not a valid MP4 audio file");
+  }
+  if (contentType === "audio/ogg") {
+    if (Buffer.from(bytes.subarray(0, 4)).toString("ascii") === "OggS") return;
+    throw badRequest("Attachment body is not a valid Ogg file");
+  }
+  throw badRequest("Attachment content type is not allowed");
 }
 
 async function ensureAttachmentTable() {
@@ -151,9 +265,13 @@ async function saveAttachment(id, request) {
       throw badRequest("Attachment name is invalid");
     }
   })();
-  const contentType = String(request.headers["content-type"] ?? "application/octet-stream").split(";")[0];
+  const contentType = String(request.headers["content-type"] ?? "application/octet-stream")
+    .split(";")[0]
+    .toLowerCase();
+  if (!attachmentMimeExtensions.has(contentType)) throw badRequest("Attachment content type is not allowed");
   const bytes = await readRawBody(request);
   if (bytes.length === 0) throw badRequest("Attachment body is empty");
+  validateAttachmentBytes(contentType, bytes);
   const reportedSize = Number(request.headers["x-attachment-size"] ?? bytes.length);
   if (Number.isFinite(reportedSize) && reportedSize !== bytes.length) {
     throw badRequest("Attachment size does not match the uploaded body");
@@ -161,7 +279,7 @@ async function saveAttachment(id, request) {
   const storedName = `${attachmentId}${extensionForAttachment(contentType, originalName)}`;
   const storagePath = path.join(attachmentStorageRoot, storedName);
   const resolvedStoragePath = path.resolve(storagePath);
-  if (!resolvedStoragePath.startsWith(`${attachmentStorageRoot}${path.sep}`)) {
+  if (!isPathInside(attachmentStorageRoot, resolvedStoragePath)) {
     throw badRequest("Attachment storage path is invalid");
   }
   await mkdir(attachmentStorageRoot, { recursive: true });
@@ -211,7 +329,7 @@ async function loadAttachment(id) {
   const attachment = result.rows[0];
   if (!attachment) throw notFound("Attachment not found");
   const storagePath = path.resolve(attachment.storage_path);
-  if (!storagePath.startsWith(`${attachmentStorageRoot}${path.sep}`)) {
+  if (!isPathInside(attachmentStorageRoot, storagePath)) {
     throw badRequest("Stored attachment path is invalid");
   }
   const fileStats = await stat(storagePath).catch(() => undefined);
@@ -235,7 +353,8 @@ function validateUserRegistration(payload) {
   if (!userRoles.has(role)) throw badRequest("Select a valid role");
   if (!partnerSites.has(partnerSite)) throw badRequest("Select a valid partner site");
   if (!assignedSites.has(siteAssigned)) throw badRequest("Select a valid assigned site");
-  if (password.length < 8) throw badRequest("Password must be at least 8 characters");
+  if (password.length < 8 || password.length > 128)
+    throw badRequest("Password must be between 8 and 128 characters");
 
   return { name, email, role, partnerSite, siteAssigned, password };
 }
@@ -266,8 +385,37 @@ async function ensureUsersTable() {
   await pool.query("create index if not exists who_va_users_role_idx on who_va_users (role)");
 }
 
-async function registerUser(payload) {
+async function hasRegisteredUsers() {
   await ensureUsersTable();
+  const result = await pool.query("select exists (select 1 from who_va_users) as has_users");
+  return Boolean(result.rows[0]?.has_users);
+}
+
+async function requireAdminRequester(request, url) {
+  const setupKey = process.env.WHO_VA_SETUP_KEY;
+  const providedSetupKey = String(request.headers["x-setup-key"] ?? "").trim();
+  const setupKeyBytes = Buffer.from(setupKey ?? "");
+  const providedSetupKeyBytes = Buffer.from(providedSetupKey);
+  if (
+    setupKey &&
+    providedSetupKey &&
+    providedSetupKeyBytes.length === setupKeyBytes.length &&
+    timingSafeEqual(providedSetupKeyBytes, setupKeyBytes)
+  ) {
+    return;
+  }
+  const auth = authFromRequest(request, url);
+  const requester = await loadUserByAuthKey(auth.userId, auth.authKey);
+  if (requester.role !== "admin") {
+    const error = new Error("Only admin users can register users");
+    error.statusCode = 403;
+    throw error;
+  }
+}
+
+async function registerUser(payload, request, url) {
+  await ensureUsersTable();
+  if (await hasRegisteredUsers()) await requireAdminRequester(request, url);
   const user = validateUserRegistration(payload);
   try {
     const result = await pool.query(
@@ -312,12 +460,13 @@ async function registerUser(payload) {
     throw error;
   }
 }
-async function loginUser(payload) {
+async function loginUser(payload, request) {
   await ensureUsersTable();
   const identifier = typeof payload.email === "string" ? payload.email.trim() : "";
   const normalizedEmail = identifier.toLowerCase();
   const password = typeof payload.password === "string" ? payload.password : "";
   if (!identifier || !password) throw badRequest("Email or user ID and password are required");
+  assertLoginAllowed(request, identifier);
 
   const result = await pool.query(
     `
@@ -328,8 +477,11 @@ async function loginUser(payload) {
     [normalizedEmail, identifier]
   );
   const saved = result.rows[0];
-  if (!saved || !verifyPassword(password, saved.password_hash))
+  if (!saved || !verifyPassword(password, saved.password_hash)) {
+    recordLoginFailure(request, identifier);
     throw badRequest("Invalid email/user ID or password");
+  }
+  clearLoginFailures(request, identifier);
   return {
     userId: saved.user_id,
     name: saved.name,
@@ -353,12 +505,7 @@ const characterOnlyCaseEntryFields = {
 const characterOnlyPattern = /^[A-Za-z]+(?: [A-Za-z]+)*$/;
 
 const allowedCaseEntrySexValues = new Set(["female", "male", "undetermined"]);
-const allowedDeathPlaceValues = new Set([
-  "hospital-death",
-  "home-death",
-  "on-the-way-to-hospital",
-  "other"
-]);
+const allowedDeathPlaceValues = new Set(["hospital-death", "home-death", "on-the-way-to-hospital", "other"]);
 const deathPlaceAliases = new Map([
   ["hospital-death", "hospital-death"],
   ["hospital death", "hospital-death"],
@@ -508,6 +655,13 @@ async function verifyUserAuthKey(userId, authKey) {
     authKey
   ]);
   if (!result.rows[0]) throw badRequest("Invalid user auth key");
+}
+
+function authFromRequest(request, url) {
+  return {
+    userId: String(request.headers["x-user-id"] ?? url.searchParams.get("userId") ?? "").trim(),
+    authKey: String(request.headers["x-auth-key"] ?? url.searchParams.get("authKey") ?? "").trim()
+  };
 }
 async function loadUserByAuthKey(userId, authKey) {
   if (!userId || !authKey) throw badRequest("userId and authKey are required");
@@ -789,10 +943,20 @@ const vite = await createViteServer({
   appType: "spa"
 });
 
+function localNetworkUrls(port) {
+  return Object.values(networkInterfaces())
+    .flat()
+    .filter(
+      (networkInterface) =>
+        networkInterface && networkInterface.family === "IPv4" && !networkInterface.internal
+    )
+    .map((networkInterface) => `http://${networkInterface.address}:${port}`);
+}
+
 const server = createHttpServer(async (request, response) => {
   try {
     if (request.method === "OPTIONS" && request.url?.startsWith("/api/")) {
-      response.writeHead(204, corsHeaders);
+      response.writeHead(204, { ...corsPreflightHeaders, ...corsHeadersFor(request) });
       response.end();
       return;
     }
@@ -801,14 +965,16 @@ const server = createHttpServer(async (request, response) => {
 
     if (url.pathname === "/api/health" && request.method === "GET") {
       await pool.query("select 1");
-      sendJson(response, 200, { ok: true, database: process.env.PGDATABASE ?? "whova" });
+      sendJson(request, response, 200, { ok: true, database: process.env.PGDATABASE ?? "whova" });
       return;
     }
 
     if (url.pathname.startsWith("/api/attachments/") && request.method === "PUT") {
+      const auth = authFromRequest(request, url);
+      await verifyUserAuthKey(auth.userId, auth.authKey);
       const id = decodeURIComponent(url.pathname.slice("/api/attachments/".length));
       const attachment = await saveAttachment(id, request);
-      sendJson(response, 200, { ok: true, attachment });
+      sendJson(request, response, 200, { ok: true, attachment });
       return;
     }
 
@@ -819,9 +985,9 @@ const server = createHttpServer(async (request, response) => {
       response.writeHead(200, {
         "content-type": attachment.mime_type,
         "content-length": String(bytes.length),
+        "content-disposition": `inline; filename="${String(attachment.stored_name).replace(/["\\\r\n]/gu, "_")}"`,
         "cache-control": "private, max-age=3600",
-        "x-content-type-options": "nosniff",
-        ...corsHeaders
+        ...apiHeaders(request)
       });
       response.end(bytes);
       return;
@@ -829,50 +995,46 @@ const server = createHttpServer(async (request, response) => {
 
     if (url.pathname === "/api/form-entries" && request.method === "GET") {
       const entries = await listFormEntries();
-      sendJson(response, 200, { ok: true, entries });
+      sendJson(request, response, 200, { ok: true, entries });
       return;
     }
 
     if (url.pathname === "/api/form-entries" && request.method === "POST") {
       const saved = await saveFormEntry(await readJsonBody(request));
-      sendJson(response, 200, { ok: true, saved });
+      sendJson(request, response, 200, { ok: true, saved });
       return;
     }
 
     if (url.pathname === "/api/dashboard" && request.method === "GET") {
-      const dashboard = await listUserDashboard(
-        url.searchParams.get("userId"),
-        url.searchParams.get("authKey")
-      );
-      sendJson(response, 200, { ok: true, ...dashboard });
+      const auth = authFromRequest(request, url);
+      const dashboard = await listUserDashboard(auth.userId, auth.authKey);
+      sendJson(request, response, 200, { ok: true, ...dashboard });
       return;
     }
 
     if (url.pathname === "/api/mobile-sync" && request.method === "GET") {
-      const entries = await listMobileSyncEntries(
-        url.searchParams.get("userId"),
-        url.searchParams.get("authKey")
-      );
-      sendJson(response, 200, { ok: true, entries });
+      const auth = authFromRequest(request, url);
+      const entries = await listMobileSyncEntries(auth.userId, auth.authKey);
+      sendJson(request, response, 200, { ok: true, entries });
       return;
     }
 
     if (url.pathname === "/api/users" && request.method === "POST") {
-      const user = await registerUser(await readJsonBody(request));
-      sendJson(response, 200, { ok: true, user });
+      const user = await registerUser(await readJsonBody(request), request, url);
+      sendJson(request, response, 200, { ok: true, user });
       return;
     }
 
     if (url.pathname === "/api/login" && request.method === "POST") {
-      const user = await loginUser(await readJsonBody(request));
+      const user = await loginUser(await readJsonBody(request), request);
       const entries = await listMobileSyncEntries(user.userId, user.authKey);
-      sendJson(response, 200, { ok: true, user, entries });
+      sendJson(request, response, 200, { ok: true, user, entries });
       return;
     }
 
     if (url.pathname === "/api/drafts" && request.method === "POST") {
       const saved = await saveDraft(await readJsonBody(request));
-      sendJson(response, 200, { ok: true, saved });
+      sendJson(request, response, 200, { ok: true, saved });
       return;
     }
 
@@ -880,33 +1042,42 @@ const server = createHttpServer(async (request, response) => {
       const id = decodeURIComponent(url.pathname.slice("/api/drafts/".length));
       const draft = await loadDraft(id);
       if (!draft) {
-        sendJson(response, 404, { ok: false, error: "Draft not found" });
+        sendJson(request, response, 404, { ok: false, error: "Draft not found" });
         return;
       }
-      sendJson(response, 200, { ok: true, draft });
+      sendJson(request, response, 200, { ok: true, draft });
       return;
     }
 
     if (url.pathname.startsWith("/api/drafts/") && request.method === "DELETE") {
       const id = decodeURIComponent(url.pathname.slice("/api/drafts/".length));
       await removeDraft(id);
-      sendJson(response, 200, { ok: true });
+      sendJson(request, response, 200, { ok: true });
       return;
     }
 
+    response.setHeader("x-content-type-options", "nosniff");
+    response.setHeader("referrer-policy", "no-referrer");
     vite.middlewares(request, response);
   } catch (error) {
     console.error(error);
     const statusCode = Number(error?.statusCode ?? 500);
-    sendJson(response, statusCode, {
+    sendJson(request, response, statusCode, {
       ok: false,
-      error: error instanceof Error ? error.message : String(error)
+      error:
+        statusCode >= 500 ? "Internal server error" : error instanceof Error ? error.message : String(error)
     });
   }
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`WHO VA demo with Postgres saving: http://${HOST}:${PORT}`);
+  const localUrl = `http://127.0.0.1:${PORT}`;
+  const boundUrl = `http://${HOST}:${PORT}`;
+  const mobileUrls = localNetworkUrls(PORT);
+  console.log(`WHO VA demo with Postgres saving: ${localUrl}`);
+  if (HOST !== "127.0.0.1" && mobileUrls.length > 0)
+    console.log(`Mobile devices can use: ${mobileUrls.join(", ")}`);
+  if (HOST !== "0.0.0.0" && boundUrl !== localUrl) console.log(`Bound to: ${boundUrl}`);
 });
 
 process.on("SIGINT", async () => {

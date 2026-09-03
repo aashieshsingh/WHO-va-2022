@@ -49,7 +49,11 @@ async function pushFormEntry(apiBaseUrl: string, payload: SaveFormEntryPayload):
   const url = `${normalizeApiBaseUrl(apiBaseUrl).replace(/\/$/u, "")}/api/form-entries`;
   const response = await fetch(url, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      "x-user-id": payload.userId,
+      "x-auth-key": payload.authKey
+    },
     body: JSON.stringify(payload)
   });
   const body = await readJsonResponse<{ ok: boolean; error?: string }>(response);

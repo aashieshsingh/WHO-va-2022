@@ -7,7 +7,7 @@ import { ActionButton, DemoChrome, ScreenHeader, ScreenScroll, styles } from "..
 import { emptyCaseEntry, type CaseEntryData, useDemoState } from "../components/DemoState";
 import { validateCaseEntryData } from "../components/LocalDatabase";
 
-type CaseEntryField = Exclude<keyof CaseEntryData, "ageAtDeath" | "deceasedSex">;
+type CaseEntryField = Exclude<keyof CaseEntryData, "ageAtDeath" | "deathPlace" | "deceasedSex">;
 
 const textFields: Array<[CaseEntryField, string, "default" | "numeric"]> = [
   ["district", "District", "default"],
@@ -50,7 +50,7 @@ export default function CaseEntryRoute() {
       mode: "date",
       value: dateFromIso(entry[field]),
       onValueChange: (_event, selectedDate) => {
-        updateText(field, isoFromDate(selectedDate));
+        if (selectedDate) updateText(field, isoFromDate(selectedDate));
       }
     });
   };
@@ -88,9 +88,31 @@ export default function CaseEntryRoute() {
             <Text>{entry.date || "Select entry date"}</Text>
           </Pressable>
           <Text style={styles.fieldLabel}>Death date</Text>
-          <Pressable accessibilityRole="button" onPress={() => pickDate("deathDate")} style={styles.textInput}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => pickDate("deathDate")}
+            style={styles.textInput}
+          >
             <Text>{entry.deathDate || "Select death date"}</Text>
           </Pressable>
+          <Text style={styles.fieldLabel}>Place of death</Text>
+          <View style={styles.actionStack}>
+            {(
+              [
+                ["hospital-death", "Hospital death"],
+                ["home-death", "Home death"],
+                ["on-the-way-to-hospital", "On the way to hospital"],
+                ["other", "Other place"]
+              ] as const
+            ).map(([deathPlace, label]) => (
+              <ActionButton
+                key={deathPlace}
+                label={deathPlace === entry.deathPlace ? `${label} selected` : label}
+                onPress={() => setEntry((current) => ({ ...current, deathPlace }))}
+                variant={deathPlace === entry.deathPlace ? "primary" : "secondary"}
+              />
+            ))}
+          </View>
           <Text style={styles.fieldLabel}>Sex of the deceased</Text>
           <View style={styles.actionStack}>
             {(["female", "male", "undetermined"] as const).map((sex) => (

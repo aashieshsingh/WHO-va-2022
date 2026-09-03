@@ -157,6 +157,56 @@ describe("cohesive runtime models", () => {
       });
     }
   });
+
+  it("keeps section navigation aligned to current form relevance", () => {
+    const branchingInstrument: InstrumentDefinition = {
+      ...instrument,
+      sections: [
+        instrument.sections[0]!,
+        {
+          name: "child_branch",
+          sourceRow: 10,
+          order: 2,
+          label: { en: "Child branch" },
+          relevant: { source: "${age_group} = 'child'" }
+        }
+      ],
+      questions: [
+        instrument.questions[0]!,
+        {
+          ...instrument.questions[0]!,
+          name: "age_group",
+          order: 2,
+          sourceRow: 11,
+          dataType: "string",
+          control: "singleChoice",
+          label: { en: "Age group" },
+          choices: [{ value: "child", label: { en: "Child" }, sourceRow: 11 }],
+          sectionPath: ["main"]
+        },
+        {
+          ...instrument.questions[0]!,
+          name: "child_note",
+          order: 3,
+          sourceRow: 12,
+          label: { en: "Child note" },
+          sectionPath: ["child_branch"]
+        }
+      ]
+    };
+    const session = createWhoVaSession(branchingInstrument);
+
+    expect(session.getSnapshot().visibleSections.map((section) => section.name)).toEqual(["main"]);
+    expect(session.goToSection("child_branch")).toBe(false);
+
+    session.setAnswer("age_group", "child");
+    expect(session.getSnapshot().visibleSections.map((section) => section.name)).toEqual([
+      "main",
+      "child_branch"
+    ]);
+    expect(session.goToSection("child_branch")).toBe(true);
+    expect(session.getSnapshot().questions.map((question) => question.name)).toEqual(["child_note"]);
+  });
 });
 
 function assertTypeBoundaries(): void {

@@ -163,6 +163,7 @@ const adminRegisterUser = document.querySelector<HTMLButtonElement>("#admin-regi
 const adminOpenDataEntry = document.querySelector<HTMLButtonElement>("#admin-open-data-entry");
 const adminOpenDashboard = document.querySelector<HTMLButtonElement>("#admin-open-dashboard");
 const showDashboard = document.querySelector<HTMLButtonElement>("#show-dashboard");
+const logoutUser = document.querySelector<HTMLButtonElement>("#logout-user");
 const dashboardShell = document.querySelector<HTMLElement>("#dashboard-shell");
 const dashboardSummary = document.querySelector<HTMLElement>("#dashboard-summary");
 const dashboardTotals = document.querySelector<HTMLElement>("#dashboard-totals");
@@ -257,6 +258,7 @@ const updateAccessControls = () => {
   if (showLogin) showLogin.hidden = currentUser != null;
   if (showRegistration) showRegistration.hidden = currentUser != null && !hasAdminAccess();
   if (showDashboard) showDashboard.hidden = currentUser == null;
+  if (logoutUser) logoutUser.hidden = currentUser == null;
   if (newCaseEntry) newCaseEntry.hidden = !hasDataEntryAccess();
   for (const button of startSelectedEntries) {
     button.hidden = !hasDataEntryAccess();
@@ -450,6 +452,7 @@ const fillCaseEntryForm = (entry: CaseEntryData) => {
 
 const readCaseEntryData = (sourceForm: HTMLFormElement): CaseEntryData => {
   const formData = new FormData(sourceForm);
+  const entryDate = String(formData.get("date") ?? "") || new Date().toISOString().slice(0, 10);
   return {
     district: String(formData.get("district") ?? ""),
     block: String(formData.get("block") ?? ""),
@@ -457,7 +460,7 @@ const readCaseEntryData = (sourceForm: HTMLFormElement): CaseEntryData => {
     phc: String(formData.get("phc") ?? ""),
     subcentre: String(formData.get("subcentre") ?? ""),
     uid: String(formData.get("uid") ?? ""),
-    date: String(formData.get("date") ?? ""),
+    date: entryDate,
     deceasedFullName: String(formData.get("deceasedFullName") ?? ""),
     deceasedSex: String(formData.get("deceasedSex") ?? "") as CaseEntryData["deceasedSex"],
     deceasedHouseAddress: String(formData.get("deceasedHouseAddress") ?? ""),
@@ -548,7 +551,7 @@ const validateRegistrationData = (data: RegisterUserPayload): string | undefined
 const registerUser = async (payload: RegisterUserPayload): Promise<RegisteredUser> => {
   const response = await fetch(usersApiUrl(), {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...authHeaders() },
     body: JSON.stringify(payload)
   });
   const body = await readJsonResponse<{ ok: boolean; user?: RegisteredUser; error?: string }>(response);
@@ -582,6 +585,29 @@ const showLoginOutput = (value: unknown) => {
   if (!loginOutput) return;
   loginOutput.hidden = false;
   loginOutput.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+};
+
+const logoutCurrentUser = () => {
+  currentUser = undefined;
+  currentCaseEntry = undefined;
+  currentWhoVaData = undefined;
+  pickerStatusMessage = undefined;
+  loginForm?.reset();
+  if (loginOutput) {
+    loginOutput.hidden = true;
+    loginOutput.textContent = "";
+  }
+  if (dashboardUsers) dashboardUsers.replaceChildren();
+  if (dashboardTotals) dashboardTotals.replaceChildren();
+  if (dashboardOutput) {
+    dashboardOutput.hidden = true;
+    dashboardOutput.textContent = "";
+  }
+  form?.setLockedQuestionNames([]);
+  form?.setData({});
+  updateAccessControls();
+  setVisibleStep("login");
+  loginShell?.scrollIntoView({ block: "start" });
 };
 
 const showRolePage = (user: RegisteredUser) => {
@@ -620,11 +646,13 @@ const applyCaseEntryToInstrument = async (caseEntry: CaseEntryData, whoVaData: R
 
 const formEntriesApiUrl = () => "/api/form-entries";
 
+const authHeaders = (): Record<string, string> =>
+  currentUser?.userId && currentUser.authKey
+    ? { "x-user-id": currentUser.userId, "x-auth-key": currentUser.authKey }
+    : {};
+
 const dashboardApiUrl = () => {
-  const params = new URLSearchParams();
-  if (currentUser?.userId) params.set("userId", currentUser.userId);
-  if (currentUser?.authKey) params.set("authKey", currentUser.authKey);
-  return `/api/dashboard?${params.toString()}`;
+  return "/api/dashboard";
 };
 
 const draftsApiUrl = (id?: string) => {
@@ -681,7 +709,8 @@ const uploadAttachmentReference = async (
     headers: {
       "content-type": mimeType || "application/octet-stream",
       "x-attachment-name": encodeURIComponent(name),
-      "x-attachment-size": String(blob.size)
+      "x-attachment-size": String(blob.size),
+      ...authHeaders()
     },
     body: blob
   });
@@ -738,7 +767,7 @@ const dbDraftStore: WhoVaDraftStore = {
     };
     const response = await fetch(draftsApiUrl(), {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...authHeaders() },
       body: JSON.stringify({ draft: uploadedDraft })
     });
     const body = await readJsonResponse<{ ok: boolean; error?: string }>(response);
@@ -747,7 +776,7 @@ const dbDraftStore: WhoVaDraftStore = {
     }
   },
   async load(id) {
-    const response = await fetch(draftsApiUrl(id));
+    const response = await fetch(draftsApiUrl(id), { headers: authHeaders() });
     if (response.status === 404) return undefined;
     const body = await readJsonResponse<{ ok: boolean; draft?: WhoVaDraft; error?: string }>(response);
     if (!response.ok || !body.ok) {
@@ -756,7 +785,7 @@ const dbDraftStore: WhoVaDraftStore = {
     return body.draft;
   },
   async remove(id) {
-    const response = await fetch(draftsApiUrl(id), { method: "DELETE" });
+    const response = await fetch(draftsApiUrl(id), { method: "DELETE", headers: authHeaders() });
     const body = await readJsonResponse<{ ok: boolean; error?: string }>(response);
     if (!response.ok || !body.ok) {
       throw new Error(body.error ?? `Draft could not be removed. Status: ${response.status}.`);
@@ -783,7 +812,7 @@ const saveFormEntry = async (payload: SaveFormEntryPayload): Promise<SavedFormEn
   };
   const response = await fetch(formEntriesApiUrl(), {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...authHeaders() },
     body: JSON.stringify(uploadedPayload)
   });
   const responseText = await response.text();
@@ -979,7 +1008,7 @@ const refreshUserDashboard = async () => {
     dashboardUsers.append(loading);
   }
   try {
-    const response = await fetch(dashboardApiUrl());
+    const response = await fetch(dashboardApiUrl(), { headers: authHeaders() });
     const body = await readJsonResponse<{ ok: boolean; users?: DashboardUserGroup[]; error?: string }>(
       response
     );
@@ -995,6 +1024,10 @@ const refreshUserDashboard = async () => {
 showLogin?.addEventListener("click", () => {
   setVisibleStep("login");
   loginShell?.scrollIntoView({ block: "start" });
+});
+
+logoutUser?.addEventListener("click", () => {
+  logoutCurrentUser();
 });
 
 adminRegisterUser?.addEventListener("click", () => {

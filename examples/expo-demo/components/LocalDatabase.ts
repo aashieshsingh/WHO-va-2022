@@ -42,6 +42,7 @@ export interface CaseEntryData {
   deceasedHouseAddress: string;
   pinCode: string;
   deathDate: string;
+  deathPlace: "hospital-death" | "home-death" | "on-the-way-to-hospital" | "other";
   ageAtDeath: number;
 }
 
@@ -301,9 +302,8 @@ function normalizeApiBaseUrl(value: string): string {
 function nonJsonApiResponseMessage(url: string, status: number): string {
   return `The server at ${url} returned a web page instead of API data (HTTP ${status}). Use the WHO VA API server URL, for example http://YOUR-COMPUTER-IP:5173, and make sure the demo server is running.`;
 }
-function createMobileSyncUrl(apiBaseUrl: string, user: RegisteredUser): string {
-  const params = new URLSearchParams({ userId: user.userId, authKey: user.authKey });
-  return `${normalizeApiBaseUrl(apiBaseUrl).replace(/\/$/u, "")}/api/mobile-sync?${params.toString()}`;
+function createMobileSyncUrl(apiBaseUrl: string): string {
+  return `${normalizeApiBaseUrl(apiBaseUrl).replace(/\/$/u, "")}/api/mobile-sync`;
 }
 
 function createSyncedSubmissionResult(entry: ServerMobileSyncEntry): SubmissionValidationResult {
@@ -319,9 +319,25 @@ function createSyncedSubmissionResult(entry: ServerMobileSyncEntry): SubmissionV
 
 async function importServerEntries(user: RegisteredUser, entries: ServerMobileSyncEntry[]): Promise<number> {
   let imported = 0;
+  const existingCasesByUid = new Map((await listCaseEntries()).map((entry) => [entry.uid, entry]));
+  const existingCompletedByCaseUid = new Map<string, CompletedSubmission>();
+  for (const submission of await listCompletedSubmissions()) {
+    const caseUid = submission.result.data.__caseUid;
+    const uid = typeof caseUid === "string" ? caseUid : submission.caseEntry?.uid;
+    if (!uid) continue;
+    const previous = existingCompletedByCaseUid.get(uid);
+    if (!previous || new Date(submission.completedAt).getTime() > new Date(previous.completedAt).getTime()) {
+      existingCompletedByCaseUid.set(uid, submission);
+    }
+  }
+
   for (const entry of entries) {
     if (!entry.uid || !entry.caseEntry) continue;
     const updatedAt = entry.updatedAt ?? entry.completedAt ?? entry.createdAt ?? new Date().toISOString();
+    const existingCase = existingCasesByUid.get(entry.uid);
+    if (existingCase && new Date(existingCase.updatedAt).getTime() > new Date(updatedAt).getTime()) {
+      continue;
+    }
     await saveCaseEntry({
       uid: entry.uid,
       userId: entry.userId ?? user.userId,
@@ -332,9 +348,17 @@ async function importServerEntries(user: RegisteredUser, entries: ServerMobileSy
     imported += 1;
 
     if (entry.status === "completed" && entry.submission) {
+      const completedAt = entry.completedAt ?? updatedAt;
+      const existingCompleted = existingCompletedByCaseUid.get(entry.uid);
+      if (
+        existingCompleted &&
+        new Date(existingCompleted.completedAt).getTime() > new Date(completedAt).getTime()
+      ) {
+        continue;
+      }
       await saveCompletedSubmission({
         id: `server-${entry.uid}`,
-        completedAt: entry.completedAt ?? updatedAt,
+        completedAt,
         result: createSyncedSubmissionResult(entry),
         syncStatus: "pushed",
         userId: entry.userId ?? user.userId,
@@ -347,10 +371,15 @@ async function importServerEntries(user: RegisteredUser, entries: ServerMobileSy
 }
 
 export async function syncServerDataForUser(user: RegisteredUser, apiBaseUrl: string): Promise<number> {
-  const url = createMobileSyncUrl(apiBaseUrl, user);
+  const url = createMobileSyncUrl(apiBaseUrl);
   let response: Response;
   try {
-    response = await fetch(url);
+    response = await fetch(url, {
+      headers: {
+        "x-user-id": user.userId,
+        "x-auth-key": user.authKey
+      }
+    });
   } catch (error) {
     throw new Error(`Could not reach server records API at ${url}. ${(error as Error).message}`);
   }
@@ -509,6 +538,7 @@ export async function saveCompletedSubmission(submission: CompletedSubmission): 
       INSERT INTO completed_submissions (id, completed_at, payload, sync_status, user_id, auth_key, case_entry)
       VALUES (?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
+        completed_at = excluded.completed_at,
         payload = excluded.payload,
         sync_status = excluded.sync_status,
         user_id = excluded.user_id,
@@ -562,6 +592,9 @@ export function validateCaseEntryData(caseEntry: CaseEntryData): string | undefi
   if (!caseEntry.deceasedHouseAddress.trim()) return "House address of the deceased is required.";
   if (!/^[0-9]{6}$/u.test(caseEntry.pinCode.trim())) return "Pin code must be exactly 6 digits.";
   if (!caseEntry.deathDate) return "Death date is required.";
+  if (!["hospital-death", "home-death", "on-the-way-to-hospital", "other"].includes(caseEntry.deathPlace)) {
+    return "Select a valid death place.";
+  }
   if (!Number.isInteger(caseEntry.ageAtDeath) || caseEntry.ageAtDeath < 0 || caseEntry.ageAtDeath > 130) {
     return "Age at the time of death must be a whole number from 0 to 130.";
   }

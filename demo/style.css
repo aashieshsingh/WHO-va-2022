@@ -204,6 +204,33 @@ who-va-2022-form [data-testid^="question-card-"]:focus-within {
   box-shadow: var(--who-2022-web-shadow-focus);
 }
 
+who-va-2022-form [data-testid="section-switcher"] {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  flex-wrap: nowrap !important;
+  max-width: 100% !important;
+}
+
+who-va-2022-form [data-testid="section-slider"] {
+  flex: 1 1 auto !important;
+  max-width: 472px !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+
+who-va-2022-form [data-testid="section-slider"] > div {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  gap: 8px !important;
+}
+
+who-va-2022-form [data-testid="section-slider-item"] {
+  flex: 0 0 112px !important;
+  width: 112px !important;
+}
 @media (max-width: 680px) {
   .demo-header {
     align-items: flex-start;
