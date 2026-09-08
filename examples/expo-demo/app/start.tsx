@@ -3,6 +3,8 @@ import { useLocalSearchParams } from "expo-router";
 import { FormRouteScreen } from "../components/FormRouteScreen";
 import { createWhoVaDataFromCaseEntry, useDemoState } from "../components/DemoState";
 
+const editablePrefillQuestionNames = new Set(["Id10051"]);
+
 export default function StartRoute() {
   const { caseUid, completedId } = useLocalSearchParams<{ caseUid?: string; completedId?: string }>();
   const { cases, completed, getDraft, newFormKey } = useDemoState();
@@ -33,7 +35,11 @@ export default function StartRoute() {
       emptyMessage={recoveredCaseEntry ? undefined : "Save case data before starting the WHO VA form."}
       formKey={formKey}
       initialData={initialData}
-      lockedQuestionNames={recoveredPrefill ? Object.keys(recoveredPrefill) : undefined}
+      lockedQuestionNames={
+        recoveredPrefill
+          ? Object.keys(recoveredPrefill).filter((name) => !editablePrefillQuestionNames.has(name))
+          : undefined
+      }
       title={recoveredCaseEntry ? `WHO VA: ${recoveredCaseEntry.deceasedFullName}` : "Start New"}
     />
   );

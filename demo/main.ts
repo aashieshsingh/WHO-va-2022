@@ -138,6 +138,7 @@ defineWhoVaElement();
 
 const LOCAL_CASE_ENTRIES_KEY = "who-va-demo-case-entries";
 const API_BASE_STORAGE_KEY = "who-va-demo-api-base";
+const editablePrefillQuestionNames = new Set(["Id10051"]);
 
 const configuredApiBase = (() => {
   const fromQuery = new URLSearchParams(window.location.search).get("apiBase");
@@ -678,7 +679,9 @@ const applyCaseEntryToInstrument = async (caseEntry: CaseEntryData, whoVaData: R
   currentCaseEntry = normalizedCaseEntry;
   currentWhoVaData = whoVaData;
   form?.setAttribute("draft-id", normalizedCaseEntry.uid);
-  form?.setLockedQuestionNames(Object.keys(whoVaData));
+  form?.setLockedQuestionNames(
+    Object.keys(whoVaData).filter((name) => !editablePrefillQuestionNames.has(name))
+  );
   form?.setData(whoVaData);
   setVisibleStep("instrument");
   whoVaShell?.scrollIntoView({ block: "start" });
