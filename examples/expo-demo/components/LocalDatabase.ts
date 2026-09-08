@@ -673,6 +673,13 @@ export function createEntryUid(): string {
   return createLocalId("VA");
 }
 
+function isFutureDate(value: string): boolean {
+  const date = new Date(`${value}T00:00:00`);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return !Number.isNaN(date.getTime()) && date.getTime() > today.getTime();
+}
+
 export function validateCaseEntryData(caseEntry: CaseEntryData): string | undefined {
   const characterOnlyFields: Array<[keyof CaseEntryData, string]> = [
     ["district", "District"],
@@ -697,6 +704,7 @@ export function validateCaseEntryData(caseEntry: CaseEntryData): string | undefi
   if (!caseEntry.deceasedHouseAddress.trim()) return "House address of the deceased is required.";
   if (!/^[0-9]{6}$/u.test(caseEntry.pinCode.trim())) return "Pin code must be exactly 6 digits.";
   if (!caseEntry.deathDate) return "Death date is required.";
+  if (isFutureDate(caseEntry.deathDate)) return "Death date cannot be in the future.";
   if (!["hospital-death", "home-death", "on-the-way-to-hospital", "other"].includes(caseEntry.deathPlace)) {
     return "Select a valid death place.";
   }

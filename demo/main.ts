@@ -465,10 +465,13 @@ const renderDeceasedDropdown = () => {
 const setDefaultEntryValues = () => {
   if (!entryForm || !uidInput) return;
 
+  const today = new Date().toISOString().slice(0, 10);
   uidInput.value = createEntryUid();
+  const deathDateInput = entryForm.elements.namedItem("deathDate") as HTMLInputElement | null;
+  if (deathDateInput) deathDateInput.max = today;
   const dateInput = entryForm.elements.namedItem("date") as HTMLInputElement | null;
   if (dateInput && !dateInput.value) {
-    dateInput.value = new Date().toISOString().slice(0, 10);
+    dateInput.value = today;
   }
 };
 
@@ -514,7 +517,16 @@ const readCaseEntryData = (sourceForm: HTMLFormElement): CaseEntryData => {
   };
 };
 
+const isFutureDate = (value: string) => {
+  const date = new Date(`${value}T00:00:00`);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return !Number.isNaN(date.getTime()) && date.getTime() > today.getTime();
+};
+
 const validateCaseEntryData = (data: CaseEntryData): string | undefined => {
+  if (!data.deathDate) return "Death date is required.";
+  if (isFutureDate(data.deathDate)) return "Death date cannot be in the future.";
   if (!data.deathPlace) {
     return "Select a valid death place: Hospital death, Home death, On the way to hospital, or Other place.";
   }

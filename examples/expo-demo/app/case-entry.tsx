@@ -48,6 +48,7 @@ export default function CaseEntryRoute() {
   const pickDate = (field: "date" | "deathDate") => {
     DateTimePickerAndroid.open({
       mode: "date",
+      maximumDate: new Date(),
       value: dateFromIso(entry[field]),
       onValueChange: (_event, selectedDate) => {
         if (selectedDate) updateText(field, isoFromDate(selectedDate));

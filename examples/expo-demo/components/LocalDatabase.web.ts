@@ -170,6 +170,15 @@ export function createEntryUid(): string {
   return `VA-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
 }
 
-export function validateCaseEntryData(_caseEntry: CaseEntryData): string | undefined {
+function isFutureDate(value: string): boolean {
+  const date = new Date(`${value}T00:00:00`);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return !Number.isNaN(date.getTime()) && date.getTime() > today.getTime();
+}
+
+export function validateCaseEntryData(caseEntry: CaseEntryData): string | undefined {
+  if (!caseEntry.deathDate) return "Death date is required.";
+  if (isFutureDate(caseEntry.deathDate)) return "Death date cannot be in the future.";
   return undefined;
 }
