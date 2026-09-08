@@ -54,6 +54,11 @@ interface LoginPayload {
   password: string;
 }
 
+interface LoginResult {
+  user: RegisteredUser;
+  entries: SavedCaseEntry[];
+}
+
 interface SavedFormEntry {
   id: number;
   uid: string;
@@ -132,6 +137,31 @@ interface DashboardUserGroup {
 defineWhoVaElement();
 
 const LOCAL_CASE_ENTRIES_KEY = "who-va-demo-case-entries";
+const API_BASE_STORAGE_KEY = "who-va-demo-api-base";
+
+const configuredApiBase = (() => {
+  const fromQuery = new URLSearchParams(window.location.search).get("apiBase");
+  const fromStorage = localStorage.getItem(API_BASE_STORAGE_KEY);
+  const base = (fromQuery ?? fromStorage ?? "").trim().replace(/\/+$/u, "");
+  if (fromQuery) localStorage.setItem(API_BASE_STORAGE_KEY, base);
+  return base;
+})();
+
+const apiUrl = (path: string) => `${configuredApiBase}${path.startsWith("/") ? path : `/${path}`}`;
+
+const fetchApi = async (path: string, init?: RequestInit) => {
+  const url = path.startsWith("http://") || path.startsWith("https://") ? path : apiUrl(path);
+  try {
+    return await fetch(url, init);
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new Error(
+        `Could not reach the WHO VA server at ${url}. Start the DB-backed demo server with pnpm dev, or open this page with ?apiBase=http://SERVER_IP:5173 when syncing from another device.`
+      );
+    }
+    throw error;
+  }
+};
 
 const form = document.querySelector<WhoVaFormElement>("#who-va-form");
 const language = document.querySelector<HTMLSelectElement>("#language");
@@ -320,13 +350,8 @@ const mergeStoredCaseEntries = (primary: StoredCaseEntry[], secondary: StoredCas
   return [...byUid.values()].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 };
 
-const loadSavedCaseEntries = async (): Promise<StoredCaseEntry[]> => {
-  const response = await fetch(formEntriesApiUrl());
-  const body = await readJsonResponse<{ ok: boolean; entries?: SavedCaseEntry[]; error?: string }>(response);
-  if (!response.ok || !body.ok) {
-    throw new Error(body.error ?? `Saved entries could not be loaded. Status: ${response.status}.`);
-  }
-  return (body.entries ?? [])
+const normalizeSavedCaseEntries = (entries: SavedCaseEntry[]): StoredCaseEntry[] =>
+  entries
     .map((entry) => {
       const caseEntry = entry.caseEntry ?? entry.case_entry;
       return {
@@ -339,6 +364,23 @@ const loadSavedCaseEntries = async (): Promise<StoredCaseEntry[]> => {
     .filter((entry): entry is StoredCaseEntry =>
       Boolean(entry.uid && entry.caseEntry?.deceasedFullName && entry.updatedAt)
     );
+
+const cacheSyncedCaseEntries = (entries: SavedCaseEntry[]) => {
+  const syncedEntries = normalizeSavedCaseEntries(entries);
+  if (syncedEntries.length === 0) return 0;
+  writeStoredCaseEntries(mergeStoredCaseEntries(syncedEntries, readStoredCaseEntries()).slice(0, 100));
+  return syncedEntries.length;
+};
+
+const loadSavedCaseEntries = async (): Promise<StoredCaseEntry[]> => {
+  const response = await fetchApi(currentUser ? "/api/mobile-sync" : formEntriesApiUrl(), {
+    headers: authHeaders()
+  });
+  const body = await readJsonResponse<{ ok: boolean; entries?: SavedCaseEntry[]; error?: string }>(response);
+  if (!response.ok || !body.ok) {
+    throw new Error(body.error ?? `Saved entries could not be loaded. Status: ${response.status}.`);
+  }
+  return normalizeSavedCaseEntries(body.entries ?? []);
 };
 
 const refreshDeceasedDropdown = async () => {
@@ -520,7 +562,7 @@ const showRegistrationOutput = (value: unknown) => {
   registrationOutput.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
 };
 
-const usersApiUrl = () => "/api/users";
+const usersApiUrl = () => apiUrl("/api/users");
 
 const readRegistrationData = (sourceForm: HTMLFormElement): RegisterUserPayload => {
   const formData = new FormData(sourceForm);
@@ -549,7 +591,7 @@ const validateRegistrationData = (data: RegisterUserPayload): string | undefined
 };
 
 const registerUser = async (payload: RegisterUserPayload): Promise<RegisteredUser> => {
-  const response = await fetch(usersApiUrl(), {
+  const response = await fetchApi(usersApiUrl(), {
     method: "POST",
     headers: { "content-type": "application/json", ...authHeaders() },
     body: JSON.stringify(payload)
@@ -568,17 +610,22 @@ const readLoginData = (sourceForm: HTMLFormElement): LoginPayload => {
   };
 };
 
-const loginUser = async (payload: LoginPayload): Promise<RegisteredUser> => {
-  const response = await fetch("/api/login", {
+const loginUser = async (payload: LoginPayload): Promise<LoginResult> => {
+  const response = await fetchApi("/api/login", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload)
   });
-  const body = await readJsonResponse<{ ok: boolean; user?: RegisteredUser; error?: string }>(response);
+  const body = await readJsonResponse<{
+    ok: boolean;
+    user?: RegisteredUser;
+    entries?: SavedCaseEntry[];
+    error?: string;
+  }>(response);
   if (!response.ok || !body.ok || !body.user) {
     throw new Error(body.error ?? `Login failed. Status: ${response.status}.`);
   }
-  return body.user;
+  return { user: body.user, entries: body.entries ?? [] };
 };
 
 const showLoginOutput = (value: unknown) => {
@@ -644,7 +691,7 @@ const applyCaseEntryToInstrument = async (caseEntry: CaseEntryData, whoVaData: R
   }
 };
 
-const formEntriesApiUrl = () => "/api/form-entries";
+const formEntriesApiUrl = () => apiUrl("/api/form-entries");
 
 const authHeaders = (): Record<string, string> =>
   currentUser?.userId && currentUser.authKey
@@ -652,7 +699,7 @@ const authHeaders = (): Record<string, string> =>
     : {};
 
 const dashboardApiUrl = () => {
-  return "/api/dashboard";
+  return apiUrl("/api/dashboard");
 };
 
 const draftsApiUrl = (id?: string) => {
@@ -704,7 +751,7 @@ const uploadAttachmentReference = async (
         : reference.id;
   const mimeType =
     typeof reference.mimeType === "string" && reference.mimeType ? reference.mimeType : blob.type;
-  const response = await fetch(`/api/attachments/${encodeURIComponent(reference.id)}`, {
+  const response = await fetchApi(`/api/attachments/${encodeURIComponent(reference.id)}`, {
     method: "PUT",
     headers: {
       "content-type": mimeType || "application/octet-stream",
@@ -765,7 +812,7 @@ const dbDraftStore: WhoVaDraftStore = {
       ...draft,
       data: (await uploadAttachmentsInRecord(draft.data as Record<string, unknown>)) as WhoVaDraft["data"]
     };
-    const response = await fetch(draftsApiUrl(), {
+    const response = await fetchApi(draftsApiUrl(), {
       method: "POST",
       headers: { "content-type": "application/json", ...authHeaders() },
       body: JSON.stringify({ draft: uploadedDraft })
@@ -776,7 +823,7 @@ const dbDraftStore: WhoVaDraftStore = {
     }
   },
   async load(id) {
-    const response = await fetch(draftsApiUrl(id), { headers: authHeaders() });
+    const response = await fetchApi(draftsApiUrl(id), { headers: authHeaders() });
     if (response.status === 404) return undefined;
     const body = await readJsonResponse<{ ok: boolean; draft?: WhoVaDraft; error?: string }>(response);
     if (!response.ok || !body.ok) {
@@ -785,7 +832,7 @@ const dbDraftStore: WhoVaDraftStore = {
     return body.draft;
   },
   async remove(id) {
-    const response = await fetch(draftsApiUrl(id), { method: "DELETE", headers: authHeaders() });
+    const response = await fetchApi(draftsApiUrl(id), { method: "DELETE", headers: authHeaders() });
     const body = await readJsonResponse<{ ok: boolean; error?: string }>(response);
     if (!response.ok || !body.ok) {
       throw new Error(body.error ?? `Draft could not be removed. Status: ${response.status}.`);
@@ -810,7 +857,7 @@ const saveFormEntry = async (payload: SaveFormEntryPayload): Promise<SavedFormEn
     whoVaData: await uploadAttachmentsInRecord(payload.whoVaData),
     ...(payload.submission ? { submission: await uploadAttachmentsInRecord(payload.submission) } : {})
   };
-  const response = await fetch(formEntriesApiUrl(), {
+  const response = await fetchApi(formEntriesApiUrl(), {
     method: "POST",
     headers: { "content-type": "application/json", ...authHeaders() },
     body: JSON.stringify(uploadedPayload)
@@ -1008,7 +1055,7 @@ const refreshUserDashboard = async () => {
     dashboardUsers.append(loading);
   }
   try {
-    const response = await fetch(dashboardApiUrl(), { headers: authHeaders() });
+    const response = await fetchApi(dashboardApiUrl(), { headers: authHeaders() });
     const body = await readJsonResponse<{ ok: boolean; users?: DashboardUserGroup[]; error?: string }>(
       response
     );
@@ -1066,8 +1113,10 @@ loginForm?.addEventListener("submit", (event) => {
     submitButton?.setAttribute("disabled", "true");
     showLoginOutput("Signing in...");
     try {
-      const user = await loginUser(readLoginData(loginForm));
+      const { user, entries } = await loginUser(readLoginData(loginForm));
+      const syncedCount = cacheSyncedCaseEntries(entries);
       showLoginOutput(`Login successful. Role: ${user.role === "admin" ? "Admin" : "Data entry"}`);
+      if (syncedCount > 0) pickerStatusMessage = `Synced ${syncedCount} entries from the server.`;
       showRolePage(user);
     } catch (error) {
       showLoginOutput(error instanceof Error ? error.message : String(error));

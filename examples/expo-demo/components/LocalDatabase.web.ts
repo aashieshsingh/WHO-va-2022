@@ -30,9 +30,17 @@ export interface LoginPayload {
 
 export interface LoginResult {
   user: RegisteredUser;
+  fetchedServerRecords: number;
   importedServerRecords: number;
   syncWarning?: string;
   usedCachedUser?: boolean;
+}
+
+export interface ServerSyncResult {
+  fetched: number;
+  imported: number;
+  skipped: number;
+  errors: string[];
 }
 
 export interface CaseEntryData {
@@ -138,8 +146,11 @@ export async function loginOnlineUser(_data: LoginPayload, _apiBaseUrl: string):
   throw new Error("Online login is not available in the web storage demo.");
 }
 
-export async function syncServerDataForUser(_user: RegisteredUser, _apiBaseUrl: string): Promise<number> {
-  return 0;
+export async function syncServerDataForUser(
+  _user: RegisteredUser,
+  _apiBaseUrl: string
+): Promise<ServerSyncResult> {
+  return { fetched: 0, imported: 0, skipped: 0, errors: [] };
 }
 
 export async function loadCurrentUser(): Promise<RegisteredUser | undefined> {

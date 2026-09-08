@@ -29,7 +29,16 @@ export interface PushResult {
 function normalizeApiBaseUrl(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) return trimmed;
-  return /^https?:\/\//iu.test(trimmed) ? trimmed : `http://${trimmed}`;
+  const withProtocol = /^https?:\/\//iu.test(trimmed) ? trimmed : `http://${trimmed}`;
+  try {
+    const url = new URL(withProtocol);
+    url.pathname = url.pathname.replace(/\/api(?:\/.*)?$/u, "");
+    url.search = "";
+    url.hash = "";
+    return url.toString().replace(/\/$/u, "");
+  } catch {
+    return withProtocol.replace(/\/api(?:\/.*)?$/u, "");
+  }
 }
 
 function nonJsonApiResponseMessage(status: number): string {

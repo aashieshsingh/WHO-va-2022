@@ -51,6 +51,10 @@ function userLabel(user: UserDashboard["user"]): string {
   return user.name || user.email || user.userId;
 }
 
+function syncUserLabel(user: RegisteredUser): string {
+  return `${user.email} (${user.userId})`;
+}
+
 export default function DashboardRoute() {
   const router = useRouter();
   const { cases, completed, currentUser, drafts, pushToServer, syncFromServer, users } = useDemoState();
@@ -64,9 +68,19 @@ export default function DashboardRoute() {
   for (const user of users) userMap.set(user.userId, user);
   if (currentUser) userMap.set(currentUser.userId, currentUser);
 
+  const allCasesByUid = new Map(cases.map((entry) => [entry.uid, entry]));
+  const visibleCases = currentUser ? cases.filter((entry) => entry.userId === currentUser.userId) : [];
+  const visibleCompleted = currentUser
+    ? completed.filter((submission) => {
+        const caseUid = caseUidFromCompleted(submission);
+        const submissionUserId = submission.userId ?? (caseUid ? allCasesByUid.get(caseUid)?.userId : undefined);
+        return submissionUserId === currentUser.userId;
+      })
+    : [];
+
   const latestCompletedByCaseUid = new Map<string, CompletedSubmission>();
   const orphanCompleted: CompletedSubmission[] = [];
-  for (const submission of completed) {
+  for (const submission of visibleCompleted) {
     const caseUid = caseUidFromCompleted(submission);
     if (!caseUid) {
       orphanCompleted.push(submission);
@@ -79,10 +93,10 @@ export default function DashboardRoute() {
   }
 
   const draftById = new Map(drafts.map((draft) => [draft.id, draft]));
-  const caseUids = new Set(cases.map((entry) => entry.uid));
+  const caseUids = new Set(visibleCases.map((entry) => entry.uid));
   const entries: DashboardEntry[] = [];
 
-  for (const entry of cases) {
+  for (const entry of visibleCases) {
     const matchingDraft = draftById.get(entry.uid);
     const matchingCompleted = latestCompletedByCaseUid.get(entry.uid);
     const isFinal = Boolean(matchingCompleted);
@@ -137,6 +151,7 @@ export default function DashboardRoute() {
   }
 
   for (const draft of drafts) {
+    if (currentUser && !caseUids.has(draft.id)) continue;
     if (caseUids.has(draft.id)) continue;
     const fallbackUserId = currentUser?.userId ?? "unknown-user";
     entries.push({
@@ -203,9 +218,15 @@ export default function DashboardRoute() {
     setSyncFailed(false);
     setPushMessage("Syncing server records...");
     void syncFromServer(pushApiBaseUrl)
-      .then((imported) => {
+      .then((result) => {
         setPushMessage(
-          imported ? `Synced ${imported} server records.` : "No server records found for this user."
+          result.fetched
+            ? `Found ${result.fetched} server records; imported ${result.imported}; skipped ${result.skipped}.${
+                result.errors[0] ? ` ${result.errors[0]}` : ""
+              }`
+            : currentUser
+              ? `No server records found for ${syncUserLabel(currentUser)}.`
+              : "No server records found for this user."
         );
       })
       .catch((error: unknown) => {

@@ -23,9 +23,17 @@ export interface LoginPayload {
 
 export interface LoginResult {
   user: RegisteredUser;
+  fetchedServerRecords: number;
   importedServerRecords: number;
   syncWarning?: string;
   usedCachedUser?: boolean;
+}
+
+export interface ServerSyncResult {
+  fetched: number;
+  imported: number;
+  skipped: number;
+  errors: string[];
 }
 
 export interface CaseEntryData {
@@ -296,7 +304,16 @@ export async function listUsers(): Promise<RegisteredUser[]> {
 function normalizeApiBaseUrl(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) return trimmed;
-  return /^https?:\/\//iu.test(trimmed) ? trimmed : `http://${trimmed}`;
+  const withProtocol = /^https?:\/\//iu.test(trimmed) ? trimmed : `http://${trimmed}`;
+  try {
+    const url = new URL(withProtocol);
+    url.pathname = url.pathname.replace(/\/api(?:\/.*)?$/u, "");
+    url.search = "";
+    url.hash = "";
+    return url.toString().replace(/\/$/u, "");
+  } catch {
+    return withProtocol.replace(/\/api(?:\/.*)?$/u, "");
+  }
 }
 
 function nonJsonApiResponseMessage(url: string, status: number): string {
@@ -304,6 +321,10 @@ function nonJsonApiResponseMessage(url: string, status: number): string {
 }
 function createMobileSyncUrl(apiBaseUrl: string): string {
   return `${normalizeApiBaseUrl(apiBaseUrl).replace(/\/$/u, "")}/api/mobile-sync`;
+}
+
+function createHealthUrl(apiBaseUrl: string): string {
+  return `${normalizeApiBaseUrl(apiBaseUrl).replace(/\/$/u, "")}/api/health`;
 }
 
 function createSyncedSubmissionResult(entry: ServerMobileSyncEntry): SubmissionValidationResult {
@@ -317,8 +338,39 @@ function createSyncedSubmissionResult(entry: ServerMobileSyncEntry): SubmissionV
   } as SubmissionValidationResult;
 }
 
-async function importServerEntries(user: RegisteredUser, entries: ServerMobileSyncEntry[]): Promise<number> {
-  let imported = 0;
+function normalizeServerDeathPlace(value: unknown): CaseEntryData["deathPlace"] | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toLowerCase().replace(/[_-]+/gu, " ").replace(/\s+/gu, " ");
+  if (["hospital death", "hospital", "health facility", "facility"].includes(normalized)) {
+    return "hospital-death";
+  }
+  if (["home death", "home"].includes(normalized)) return "home-death";
+  if (["on the way to hospital", "on way to hospital", "transit"].includes(normalized)) {
+    return "on-the-way-to-hospital";
+  }
+  if (["other", "other place", "others"].includes(normalized)) return "other";
+  return undefined;
+}
+
+function normalizeServerCaseEntry(
+  entry: CaseEntryData,
+  whoVaData: SubmissionData | null | undefined
+): CaseEntryData {
+  return {
+    ...entry,
+    householdHeadName: entry.householdHeadName?.trim() || "Not Recorded",
+    deathPlace:
+      normalizeServerDeathPlace(entry.deathPlace) ??
+      normalizeServerDeathPlace(whoVaData?.Id10058) ??
+      "other"
+  };
+}
+
+async function importServerEntries(
+  user: RegisteredUser,
+  entries: ServerMobileSyncEntry[]
+): Promise<Omit<ServerSyncResult, "fetched">> {
+  const result: Omit<ServerSyncResult, "fetched"> = { imported: 0, skipped: 0, errors: [] };
   const existingCasesByUid = new Map((await listCaseEntries()).map((entry) => [entry.uid, entry]));
   const existingCompletedByCaseUid = new Map<string, CompletedSubmission>();
   for (const submission of await listCompletedSubmissions()) {
@@ -332,20 +384,41 @@ async function importServerEntries(user: RegisteredUser, entries: ServerMobileSy
   }
 
   for (const entry of entries) {
-    if (!entry.uid || !entry.caseEntry) continue;
-    const updatedAt = entry.updatedAt ?? entry.completedAt ?? entry.createdAt ?? new Date().toISOString();
-    const existingCase = existingCasesByUid.get(entry.uid);
-    if (existingCase && new Date(existingCase.updatedAt).getTime() > new Date(updatedAt).getTime()) {
+    if (!entry.uid || !entry.caseEntry) {
+      result.skipped += 1;
       continue;
     }
-    await saveCaseEntry({
-      uid: entry.uid,
-      userId: entry.userId ?? user.userId,
-      caseEntry: entry.caseEntry,
-      whoVaData: entry.whoVaData ?? {},
-      updatedAt
-    });
-    imported += 1;
+    const caseEntry = normalizeServerCaseEntry(entry.caseEntry, entry.whoVaData ?? entry.submission);
+    const validationError = validateCaseEntryData(caseEntry);
+    if (validationError) {
+      result.skipped += 1;
+      result.errors.push(`${entry.uid}: ${validationError}`);
+      continue;
+    }
+    const updatedAt = entry.updatedAt ?? entry.completedAt ?? entry.createdAt ?? new Date().toISOString();
+    const existingCase = existingCasesByUid.get(entry.uid);
+    const entryUserId = entry.userId ?? user.userId;
+    if (
+      existingCase?.userId === entryUserId &&
+      new Date(existingCase.updatedAt).getTime() > new Date(updatedAt).getTime()
+    ) {
+      result.skipped += 1;
+      continue;
+    }
+    try {
+      await saveCaseEntry({
+        uid: entry.uid,
+        userId: entryUserId,
+        caseEntry,
+        whoVaData: entry.whoVaData ?? {},
+        updatedAt
+      });
+      result.imported += 1;
+    } catch (error) {
+      result.skipped += 1;
+      result.errors.push(`${entry.uid}: ${(error as Error).message}`);
+      continue;
+    }
 
     if (entry.status === "completed" && entry.submission) {
       const completedAt = entry.completedAt ?? updatedAt;
@@ -356,24 +429,36 @@ async function importServerEntries(user: RegisteredUser, entries: ServerMobileSy
       ) {
         continue;
       }
-      await saveCompletedSubmission({
-        id: `server-${entry.uid}`,
-        completedAt,
-        result: createSyncedSubmissionResult(entry),
-        syncStatus: "pushed",
-        userId: entry.userId ?? user.userId,
-        authKey: user.authKey,
-        caseEntry: entry.caseEntry
-      });
+      try {
+        await saveCompletedSubmission({
+          id: `server-${entry.uid}`,
+          completedAt,
+          result: createSyncedSubmissionResult(entry),
+          syncStatus: "pushed",
+          userId: entryUserId,
+          authKey: user.authKey,
+          caseEntry
+        });
+      } catch (error) {
+        result.errors.push(`${entry.uid}: completed submission was not imported: ${(error as Error).message}`);
+      }
     }
   }
-  return imported;
+  return result;
 }
 
-export async function syncServerDataForUser(user: RegisteredUser, apiBaseUrl: string): Promise<number> {
+export async function syncServerDataForUser(
+  user: RegisteredUser,
+  apiBaseUrl: string
+): Promise<ServerSyncResult> {
+  const healthUrl = createHealthUrl(apiBaseUrl);
   const url = createMobileSyncUrl(apiBaseUrl);
   let response: Response;
   try {
+    const healthResponse = await fetch(healthUrl);
+    if (!healthResponse.ok) {
+      throw new Error(`health check returned HTTP ${healthResponse.status}`);
+    }
     response = await fetch(url, {
       headers: {
         "x-user-id": user.userId,
@@ -381,7 +466,9 @@ export async function syncServerDataForUser(user: RegisteredUser, apiBaseUrl: st
       }
     });
   } catch (error) {
-    throw new Error(`Could not reach server records API at ${url}. ${(error as Error).message}`);
+    throw new Error(
+      `Could not reach server records API at ${url}. Health check: ${healthUrl}. ${(error as Error).message}`
+    );
   }
   const responseText = await response.text();
   let body: { ok: boolean; entries?: ServerMobileSyncEntry[]; error?: string };
@@ -393,7 +480,8 @@ export async function syncServerDataForUser(user: RegisteredUser, apiBaseUrl: st
     throw new Error(nonJsonApiResponseMessage(url, response.status));
   }
   if (!response.ok || !body.ok) throw new Error(body.error ?? "Could not sync server records.");
-  return importServerEntries(user, body.entries ?? []);
+  const entries = body.entries ?? [];
+  return { fetched: entries.length, ...(await importServerEntries(user, entries)) };
 }
 
 export async function loginOnlineUser(data: LoginPayload, apiBaseUrl: string): Promise<LoginResult> {
@@ -410,6 +498,7 @@ export async function loginOnlineUser(data: LoginPayload, apiBaseUrl: string): P
       const cachedUser = await loginCachedUser(data);
       return {
         user: cachedUser,
+        fetchedServerRecords: 0,
         importedServerRecords: 0,
         syncWarning:
           "Signed in offline from cached login. Server records were not checked because the API could not be reached.",
@@ -440,9 +529,17 @@ export async function loginOnlineUser(data: LoginPayload, apiBaseUrl: string): P
     throw new Error(body.error ?? "Online login failed.");
   }
   await cacheServerUser(body.user, data.password);
-  const importedServerRecords = await importServerEntries(body.user, body.entries ?? []);
+  const serverEntries = body.entries ?? [];
+  const importResult = await importServerEntries(body.user, serverEntries);
   await setCurrentUser(body.user.userId);
-  return { user: body.user, importedServerRecords };
+  return {
+    user: body.user,
+    fetchedServerRecords: serverEntries.length,
+    importedServerRecords: importResult.imported,
+    syncWarning: importResult.errors[0]
+      ? `Signed in as ${body.user.name}. Found ${serverEntries.length} server records; imported ${importResult.imported}; skipped ${importResult.skipped}. ${importResult.errors[0]}`
+      : undefined
+  };
 }
 export async function setCurrentUser(userId: string): Promise<void> {
   const database = await openDatabase();
@@ -518,17 +615,25 @@ export async function listCompletedSubmissions(): Promise<CompletedSubmission[]>
       ORDER BY completed_at DESC
     `
   );
-  return rows.map((row) => ({
-    id: row.id,
-    completedAt: row.completed_at,
-    result: decodeJson<SubmissionValidationResult>(row.payload, `completed submission ${row.id}`),
-    syncStatus: row.sync_status,
-    ...(row.user_id ? { userId: row.user_id } : {}),
-    ...(row.auth_key ? { authKey: row.auth_key } : {}),
-    ...(row.case_entry
-      ? { caseEntry: decodeJson<CaseEntryData>(row.case_entry, `case entry ${row.id}`) }
-      : {})
-  }));
+  return rows.flatMap((row) => {
+    try {
+      return [
+        {
+          id: row.id,
+          completedAt: row.completed_at,
+          result: decodeJson<SubmissionValidationResult>(row.payload, `completed submission ${row.id}`),
+          syncStatus: row.sync_status,
+          ...(row.user_id ? { userId: row.user_id } : {}),
+          ...(row.auth_key ? { authKey: row.auth_key } : {}),
+          ...(row.case_entry
+            ? { caseEntry: decodeJson<CaseEntryData>(row.case_entry, `case entry ${row.id}`) }
+            : {})
+        }
+      ];
+    } catch {
+      return [];
+    }
+  });
 }
 
 export async function saveCompletedSubmission(submission: CompletedSubmission): Promise<void> {
@@ -628,13 +733,21 @@ export async function listCaseEntries(): Promise<StoredCaseEntry[]> {
   const rows = await database.getAllAsync<CaseEntryRow>(
     "SELECT uid, user_id, case_entry, who_va_data, updated_at FROM case_entries ORDER BY updated_at DESC"
   );
-  return rows.map((row) => ({
-    uid: row.uid,
-    userId: row.user_id,
-    caseEntry: decodeJson<CaseEntryData>(row.case_entry, `case entry ${row.uid}`),
-    whoVaData: decodeJson<SubmissionData>(row.who_va_data, `WHO VA prefill ${row.uid}`),
-    updatedAt: row.updated_at
-  }));
+  return rows.flatMap((row) => {
+    try {
+      return [
+        {
+          uid: row.uid,
+          userId: row.user_id,
+          caseEntry: decodeJson<CaseEntryData>(row.case_entry, `case entry ${row.uid}`),
+          whoVaData: decodeJson<SubmissionData>(row.who_va_data, `WHO VA prefill ${row.uid}`),
+          updatedAt: row.updated_at
+        }
+      ];
+    } catch {
+      return [];
+    }
+  });
 }
 
 export async function loadCaseEntry(uid: string): Promise<StoredCaseEntry | undefined> {

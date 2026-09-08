@@ -19,7 +19,10 @@ const attachmentStorageRoot = path.resolve(
 );
 
 const allowedOrigins = new Set(
-  (process.env.WHO_VA_ALLOWED_ORIGINS ?? `http://127.0.0.1:${PORT},http://localhost:${PORT}`)
+  (
+    process.env.WHO_VA_ALLOWED_ORIGINS ??
+    [`http://127.0.0.1:${PORT}`, `http://localhost:${PORT}`, ...localNetworkUrls(PORT)].join(",")
+  )
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean)

@@ -30,6 +30,7 @@ import {
   type CompletedSubmission,
   type LoginPayload,
   type RegisteredUser,
+  type ServerSyncResult,
   type StoredCaseEntry
 } from "./LocalDatabase";
 import { pushLocalDataToServer, type PushResult } from "./ServerSync";
@@ -53,7 +54,7 @@ interface DemoState {
   login(payload: LoginPayload, apiBaseUrl?: string): Promise<void>;
   logout(): Promise<void>;
   pushToServer(apiBaseUrl?: string, submissionIds?: string[]): Promise<PushResult>;
-  syncFromServer(apiBaseUrl?: string): Promise<number>;
+  syncFromServer(apiBaseUrl?: string): Promise<ServerSyncResult>;
   saveCase(caseEntry: CaseEntryData): Promise<StoredCaseEntry>;
   setLastUpdate(message: string): void;
 }
@@ -68,6 +69,10 @@ const API_BASE_URL =
   process.env.EXPO_PUBLIC_WHO_VA_API_URL ?? apiBaseUrlFromExpoHost() ?? "http://127.0.0.1:5173";
 
 const DemoStateContext = createContext<DemoState | undefined>(undefined);
+
+function syncUserLabel(user: RegisteredUser): string {
+  return `${user.email} (${user.userId})`;
+}
 
 export function countAnswers(draft: WhoVaDraft): number {
   return Object.values(draft.data).filter((value) => value !== undefined && value !== null && value !== "")
@@ -191,15 +196,15 @@ export function DemoStateProvider({ children }: { children: ReactNode }) {
       async login(payload, apiBaseUrl) {
         const targetApiBaseUrl = apiBaseUrl?.trim() || API_BASE_URL;
         const loginResult = await loginOnlineUser(payload, targetApiBaseUrl);
-        const { importedServerRecords, syncWarning, user } = loginResult;
+        const { fetchedServerRecords, importedServerRecords, syncWarning, user } = loginResult;
         setServerApiBaseUrl(targetApiBaseUrl);
         setCurrentUser(user);
         setLastUpdate(
           syncWarning ??
             `Signed in as ${user.name}${
-              importedServerRecords
-                ? `. Imported ${importedServerRecords} server records.`
-                : ". No server records found."
+              fetchedServerRecords
+                ? `. Found ${fetchedServerRecords} server records; imported ${importedServerRecords}.`
+                : `. No server records found for ${syncUserLabel(user)}.`
             }`
         );
         await refreshLocalData();
@@ -229,12 +234,16 @@ export function DemoStateProvider({ children }: { children: ReactNode }) {
         if (!currentUser) throw new Error("Login before syncing server data.");
         const targetApiBaseUrl = apiBaseUrl?.trim() || serverApiBaseUrl;
         setServerApiBaseUrl(targetApiBaseUrl);
-        const imported = await syncServerDataForUser(currentUser, targetApiBaseUrl);
+        const result = await syncServerDataForUser(currentUser, targetApiBaseUrl);
         await refreshLocalData();
         setLastUpdate(
-          imported ? `Synced ${imported} server records.` : "No server records found for this user."
+          result.fetched
+            ? `Found ${result.fetched} server records; imported ${result.imported}; skipped ${result.skipped}.${
+                result.errors[0] ? ` ${result.errors[0]}` : ""
+              }`
+            : `No server records found for ${syncUserLabel(currentUser)}.`
         );
-        return imported;
+        return result;
       },
       latestDraft: drafts[0],
       lastUpdate,
