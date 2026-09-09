@@ -7,6 +7,7 @@ import {
   type RegisteredUser,
   type StoredCaseEntry
 } from "./LocalDatabase";
+import { fetchWithAuth } from "./AuthSession";
 
 interface SaveFormEntryPayload {
   uid: string;
@@ -26,21 +27,6 @@ export interface PushResult {
   errors: string[];
 }
 
-function normalizeApiBaseUrl(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed) return trimmed;
-  const withProtocol = /^https?:\/\//iu.test(trimmed) ? trimmed : `http://${trimmed}`;
-  try {
-    const url = new URL(withProtocol);
-    url.pathname = url.pathname.replace(/\/api(?:\/.*)?$/u, "");
-    url.search = "";
-    url.hash = "";
-    return url.toString().replace(/\/$/u, "");
-  } catch {
-    return withProtocol.replace(/\/api(?:\/.*)?$/u, "");
-  }
-}
-
 function nonJsonApiResponseMessage(status: number): string {
   return `Server returned a web page instead of API data while pushing data (HTTP ${status}). Use the WHO VA API server URL, not the Expo app URL.`;
 }
@@ -55,8 +41,7 @@ async function readJsonResponse<T extends { error?: string }>(response: Response
 }
 
 async function pushFormEntry(apiBaseUrl: string, payload: SaveFormEntryPayload): Promise<void> {
-  const url = `${normalizeApiBaseUrl(apiBaseUrl).replace(/\/$/u, "")}/api/form-entries`;
-  const response = await fetch(url, {
+  const response = await fetchWithAuth(apiBaseUrl, "/api/form-entries", {
     method: "POST",
     headers: {
       "content-type": "application/json",

@@ -1,6 +1,6 @@
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { Text, TextInput, View } from "react-native";
+import { Alert, Text, TextInput, View } from "react-native";
 
 import { ActionButton, DemoChrome, ScreenScroll, styles } from "../components/DemoLayout";
 import { useDemoState } from "../components/DemoState";
@@ -16,7 +16,8 @@ export default function HomeRoute() {
     isDatabaseReady,
     latestDraft,
     login,
-    logout
+    logout,
+    switchUser
   } = useDemoState();
   const [apiBaseUrl, setApiBaseUrl] = useState("");
   const [email, setEmail] = useState("");
@@ -59,9 +60,14 @@ export default function HomeRoute() {
                 label="Login"
                 onPress={() => {
                   setLoginMessage("");
-                  void login({ email, password }, apiBaseUrl).catch((error: unknown) => {
-                    setLoginMessage((error as Error).message);
-                  });
+                  void login({ email, password }, apiBaseUrl)
+                    .then(() => {
+                      setEmail("");
+                      setPassword("");
+                    })
+                    .catch((error: unknown) => {
+                      setLoginMessage((error as Error).message);
+                    });
                 }}
               />
             </View>
@@ -113,6 +119,31 @@ export default function HomeRoute() {
             disabled={!isDatabaseReady}
             label="Logout"
             onPress={() => void logout()}
+            variant="secondary"
+          />
+          <ActionButton
+            disabled={!isDatabaseReady}
+            label="Switch User"
+            onPress={() => {
+              Alert.alert(
+                "Switch accounts",
+                "Another user is currently signed in. Continuing will sign out the current user and switch accounts.",
+                [
+                  { text: "Cancel", style: "cancel" },
+                  {
+                    text: "Continue",
+                    style: "destructive",
+                    onPress: () => {
+                      void switchUser(apiBaseUrl).then(() => {
+                        setEmail("");
+                        setPassword("");
+                        router.replace("/");
+                      });
+                    }
+                  }
+                ]
+              );
+            }}
             variant="secondary"
           />
         </View>

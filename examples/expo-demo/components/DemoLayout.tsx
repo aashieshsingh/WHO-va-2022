@@ -1,12 +1,20 @@
-import { useRouter } from "expo-router";
-import type { ReactNode } from "react";
+import { usePathname, useRouter } from "expo-router";
+import { useEffect, type ReactNode } from "react";
 import { Pressable, ScrollView, StatusBar, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { useDemoState } from "./DemoState";
 
 export function DemoChrome({ children }: { children: ReactNode }) {
-  const { lastUpdate } = useDemoState();
+  const pathname = usePathname();
+  const router = useRouter();
+  const { currentUser, isDatabaseReady, lastUpdate } = useDemoState();
+
+  useEffect(() => {
+    if (isDatabaseReady && !currentUser && pathname !== "/") {
+      router.replace("/");
+    }
+  }, [currentUser, isDatabaseReady, pathname, router]);
 
   return (
     <SafeAreaView style={styles.shell}>

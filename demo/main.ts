@@ -101,6 +101,7 @@ interface StoredAttachmentResponse {
 
 interface StoredCaseEntry {
   uid: string;
+  userId?: string | null;
   caseEntry: CaseEntryData;
   whoVaData: Record<string, unknown>;
   updatedAt: string;
@@ -333,11 +334,17 @@ const writeStoredCaseEntries = (entries: StoredCaseEntry[]) => {
   localStorage.setItem(LOCAL_CASE_ENTRIES_KEY, JSON.stringify(entries));
 };
 
+const userCanSeeStoredEntry = (entry: StoredCaseEntry) =>
+  currentUser?.role === "admin" || !currentUser || entry.userId === currentUser.userId;
+
+const visibleStoredCaseEntries = () => readStoredCaseEntries().filter(userCanSeeStoredEntry);
+
 const rememberCaseEntry = (caseEntry: CaseEntryData, whoVaData: Record<string, unknown>) => {
   const normalizedCaseEntry = normalizeCaseEntry(caseEntry);
   const entries = readStoredCaseEntries().filter((entry) => entry.uid !== normalizedCaseEntry.uid);
   entries.unshift({
     uid: normalizedCaseEntry.uid,
+    userId: currentUser?.userId,
     caseEntry: normalizedCaseEntry,
     whoVaData,
     updatedAt: new Date().toISOString()
@@ -357,6 +364,7 @@ const normalizeSavedCaseEntries = (entries: SavedCaseEntry[]): StoredCaseEntry[]
       const caseEntry = entry.caseEntry ?? entry.case_entry;
       return {
         uid: entry.uid,
+        userId: entry.userId,
         caseEntry: caseEntry ? normalizeCaseEntry(caseEntry) : undefined,
         whoVaData: entry.whoVaData ?? entry.who_va_prefill ?? {},
         updatedAt: entry.updatedAt ?? entry.updated_at
@@ -389,7 +397,7 @@ const refreshDeceasedDropdown = async () => {
   renderDeceasedDropdown();
   try {
     const remoteEntries = await loadSavedCaseEntries();
-    writeStoredCaseEntries(mergeStoredCaseEntries(remoteEntries, readStoredCaseEntries()).slice(0, 100));
+    writeStoredCaseEntries(mergeStoredCaseEntries(remoteEntries, visibleStoredCaseEntries()).slice(0, 100));
     pickerStatusMessage =
       remoteEntries.length > 0 ? undefined : "No deceased entries were returned from the database.";
   } catch (error) {
@@ -403,7 +411,7 @@ const refreshDeceasedDropdown = async () => {
 const selectedStoredCaseEntry = () => {
   const uid = deceasedEntrySelect?.value;
   if (!uid) return undefined;
-  return readStoredCaseEntries().find((entry) => entry.uid === uid);
+  return visibleStoredCaseEntries().find((entry) => entry.uid === uid);
 };
 
 const formatDeathPlace = (deathPlace?: CaseEntryData["deathPlace"]) => {
@@ -443,7 +451,7 @@ const renderSelectedEntrySummary = () => {
 const renderDeceasedDropdown = () => {
   if (!deceasedEntrySelect) return;
   const currentValue = deceasedEntrySelect.value;
-  const entries = readStoredCaseEntries();
+  const entries = visibleStoredCaseEntries();
   deceasedEntrySelect.replaceChildren();
 
   const placeholder = document.createElement("option");
@@ -648,10 +656,16 @@ const showLoginOutput = (value: unknown) => {
 };
 
 const logoutCurrentUser = () => {
+  const previousUser = currentUser;
   currentUser = undefined;
   currentCaseEntry = undefined;
   currentWhoVaData = undefined;
   pickerStatusMessage = undefined;
+  if (previousUser?.role !== "admin") {
+    writeStoredCaseEntries(
+      readStoredCaseEntries().filter((entry) => entry.userId && entry.userId !== previousUser?.userId)
+    );
+  }
   loginForm?.reset();
   if (loginOutput) {
     loginOutput.hidden = true;
@@ -1318,5 +1332,4 @@ form?.addEventListener("who-va-complete", (event) => {
 });
 
 setDefaultEntryValues();
-void refreshDeceasedDropdown();
 setVisibleStep("login");

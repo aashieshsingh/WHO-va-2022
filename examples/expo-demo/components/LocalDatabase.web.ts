@@ -30,6 +30,7 @@ export interface LoginPayload {
 
 export interface LoginResult {
   user: RegisteredUser;
+  tokens?: { accessToken: string; refreshToken: string };
   fetchedServerRecords: number;
   importedServerRecords: number;
   syncWarning?: string;
@@ -90,17 +91,17 @@ export async function initializeLocalDatabase(): Promise<void> {
   readJson<StoredCaseEntry[]>(CASES_KEY, []);
 }
 
-export async function listDrafts(): Promise<WhoVaDraft[]> {
+export async function listDrafts(_userId?: string): Promise<WhoVaDraft[]> {
   return readJson<WhoVaDraft[]>(DRAFTS_KEY, []).sort(
     (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
   );
 }
 
-export async function loadDraft(id: string): Promise<WhoVaDraft | undefined> {
+export async function loadDraft(id: string, _userId?: string): Promise<WhoVaDraft | undefined> {
   return (await listDrafts()).find((draft) => draft.id === id);
 }
 
-export async function saveDraft(draft: WhoVaDraft): Promise<void> {
+export async function saveDraft(draft: WhoVaDraft, _userId?: string): Promise<void> {
   const drafts = (await listDrafts()).filter((savedDraft) => savedDraft.id !== draft.id);
   writeJson(DRAFTS_KEY, [draft, ...drafts]);
 }
@@ -112,7 +113,7 @@ export async function removeDraft(id: string): Promise<void> {
   );
 }
 
-export async function listCompletedSubmissions(): Promise<CompletedSubmission[]> {
+export async function listCompletedSubmissions(_userId?: string): Promise<CompletedSubmission[]> {
   return readJson<CompletedSubmission[]>(COMPLETED_KEY, []).sort(
     (left, right) => new Date(right.completedAt).getTime() - new Date(left.completedAt).getTime()
   );
@@ -136,7 +137,7 @@ export async function listUsers(): Promise<RegisteredUser[]> {
   return readJson<RegisteredUser[]>(USERS_KEY, []).sort((left, right) => left.name.localeCompare(right.name));
 }
 
-export async function listCaseEntries(): Promise<StoredCaseEntry[]> {
+export async function listCaseEntries(_userId?: string): Promise<StoredCaseEntry[]> {
   return readJson<StoredCaseEntry[]>(CASES_KEY, []).sort(
     (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
   );
@@ -158,6 +159,10 @@ export async function loadCurrentUser(): Promise<RegisteredUser | undefined> {
 }
 
 export async function logoutCurrentUser(): Promise<void> {
+  return undefined;
+}
+
+export async function clearUserSession(_userId?: string): Promise<void> {
   return undefined;
 }
 

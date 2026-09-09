@@ -1,4 +1,4 @@
-import { randomBytes, timingSafeEqual, scryptSync } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual, scryptSync } from "node:crypto";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { createServer as createHttpServer } from "node:http";
 import { networkInterfaces } from "node:os";
@@ -56,7 +56,7 @@ function apiHeaders(request, extraHeaders = {}) {
 const corsPreflightHeaders = {
   "access-control-allow-methods": "DELETE,GET,POST,PUT,OPTIONS",
   "access-control-allow-headers":
-    "content-type,x-attachment-name,x-attachment-size,x-user-id,x-auth-key,x-setup-key",
+    "authorization,content-type,x-attachment-name,x-attachment-size,x-user-id,x-auth-key,x-setup-key",
   "access-control-max-age": "600"
 };
 
@@ -117,6 +117,14 @@ function generatedUserId(name) {
 
 function generatedAuthKey() {
   return `AUTH-${randomBytes(24).toString("hex").toUpperCase()}`;
+}
+
+function generatedSessionToken(prefix) {
+  return `${prefix}-${randomBytes(32).toString("base64url")}`;
+}
+
+function hashSessionToken(token) {
+  return createHash("sha256").update(String(token)).digest("hex");
 }
 
 function hashPassword(password) {
@@ -184,6 +192,12 @@ function badRequest(message) {
 function notFound(message) {
   const error = new Error(message);
   error.statusCode = 404;
+  return error;
+}
+
+function unauthorized(message) {
+  const error = new Error(message);
+  error.statusCode = 401;
   return error;
 }
 
@@ -388,6 +402,132 @@ async function ensureUsersTable() {
   await pool.query("create index if not exists who_va_users_role_idx on who_va_users (role)");
 }
 
+async function ensureUserSessionsTable() {
+  await ensureUsersTable();
+  await pool.query(`
+    create table if not exists who_va_user_sessions (
+      session_id text primary key,
+      user_id text not null references who_va_users(user_id) on delete cascade,
+      device_id text,
+      access_token_hash text not null unique,
+      refresh_token_hash text not null unique,
+      access_expires_at timestamptz not null,
+      refresh_expires_at timestamptz not null,
+      revoked_at timestamptz,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    )
+  `);
+  await pool.query("create index if not exists who_va_user_sessions_user_id_idx on who_va_user_sessions (user_id)");
+  await pool.query(
+    "create index if not exists who_va_user_sessions_access_token_hash_idx on who_va_user_sessions (access_token_hash)"
+  );
+  await pool.query(
+    "create index if not exists who_va_user_sessions_refresh_token_hash_idx on who_va_user_sessions (refresh_token_hash)"
+  );
+}
+
+async function createUserSession(userId, deviceId) {
+  await ensureUserSessionsTable();
+  const accessToken = generatedSessionToken("ACCESS");
+  const refreshToken = generatedSessionToken("REFRESH");
+  const sessionId = `SESSION-${randomBytes(16).toString("hex").toUpperCase()}`;
+  await pool.query(
+    `
+      insert into who_va_user_sessions (
+        session_id, user_id, device_id, access_token_hash, refresh_token_hash, access_expires_at, refresh_expires_at
+      )
+      values ($1, $2, $3, $4, $5, now() + interval '15 minutes', now() + interval '30 days')
+    `,
+    [sessionId, userId, deviceId || null, hashSessionToken(accessToken), hashSessionToken(refreshToken)]
+  );
+  return { accessToken, refreshToken, expiresIn: 15 * 60 };
+}
+
+async function userFromUserId(userId) {
+  await ensureUsersTable();
+  const result = await pool.query(
+    `
+      select user_id, name, email, role, partner_site, site_assigned, auth_key, created_at
+      from who_va_users
+      where user_id = $1
+    `,
+    [userId]
+  );
+  const saved = result.rows[0];
+  if (!saved) throw unauthorized("User not found");
+  return {
+    userId: saved.user_id,
+    name: saved.name,
+    email: saved.email,
+    role: saved.role,
+    partnerSite: saved.partner_site,
+    siteAssigned: saved.site_assigned,
+    authKey: saved.auth_key,
+    createdAt: saved.created_at
+  };
+}
+
+async function refreshUserSession(payload) {
+  const refreshToken = typeof payload.refreshToken === "string" ? payload.refreshToken.trim() : "";
+  if (!refreshToken) throw unauthorized("Refresh token is required");
+  await ensureUserSessionsTable();
+  const result = await pool.query(
+    `
+      select session_id, user_id
+      from who_va_user_sessions
+      where refresh_token_hash = $1
+        and revoked_at is null
+        and refresh_expires_at > now()
+    `,
+    [hashSessionToken(refreshToken)]
+  );
+  const session = result.rows[0];
+  if (!session) throw unauthorized("Refresh token is invalid or expired");
+  const accessToken = generatedSessionToken("ACCESS");
+  const nextRefreshToken = generatedSessionToken("REFRESH");
+  await pool.query(
+    `
+      update who_va_user_sessions
+      set access_token_hash = $1,
+          refresh_token_hash = $2,
+          access_expires_at = now() + interval '15 minutes',
+          refresh_expires_at = now() + interval '30 days',
+          updated_at = now()
+      where session_id = $3
+    `,
+    [hashSessionToken(accessToken), hashSessionToken(nextRefreshToken), session.session_id]
+  );
+  return {
+    user: await userFromUserId(session.user_id),
+    accessToken,
+    refreshToken: nextRefreshToken,
+    expiresIn: 15 * 60
+  };
+}
+
+async function revokeUserSession(payload, request) {
+  await ensureUserSessionsTable();
+  const refreshToken = typeof payload.refreshToken === "string" ? payload.refreshToken.trim() : "";
+  const authorization = String(request.headers.authorization ?? "");
+  const accessToken = authorization.toLowerCase().startsWith("bearer ")
+    ? authorization.slice("bearer ".length).trim()
+    : "";
+  if (!refreshToken && !accessToken) return;
+  await pool.query(
+    `
+      update who_va_user_sessions
+      set revoked_at = now(), updated_at = now()
+      where revoked_at is null
+        and (
+          ($1::text is not null and refresh_token_hash = $1)
+          or ($2::text is not null and access_token_hash = $2)
+        )
+    `,
+    [refreshToken ? hashSessionToken(refreshToken) : null, accessToken ? hashSessionToken(accessToken) : null]
+  );
+}
+
 async function hasRegisteredUsers() {
   await ensureUsersTable();
   const result = await pool.query("select exists (select 1 from who_va_users) as has_users");
@@ -563,6 +703,7 @@ async function ensureDraftTable() {
   await pool.query(`
     create table if not exists who_va_drafts (
       id text primary key,
+      user_id text,
       draft jsonb not null,
       instrument_id text not null,
       instrument_version text not null,
@@ -571,7 +712,9 @@ async function ensureDraftTable() {
       updated_at timestamptz not null default now()
     )
   `);
+  await pool.query("alter table who_va_drafts add column if not exists user_id text");
   await pool.query("create index if not exists who_va_drafts_updated_at_idx on who_va_drafts (updated_at)");
+  await pool.query("create index if not exists who_va_drafts_user_id_idx on who_va_drafts (user_id)");
 }
 function validateDraft(draft) {
   if (!draft || typeof draft !== "object" || Array.isArray(draft)) {
@@ -589,51 +732,81 @@ function validateDraft(draft) {
   return draft;
 }
 
-async function saveDraft(payload) {
+async function saveDraft(payload, auth) {
   await ensureDraftTable();
+  const requester = await loadAuthenticatedUser(auth);
   const draft = validateDraft(payload.draft ?? payload);
+  const existingResult = await pool.query("select user_id from who_va_drafts where id = $1", [draft.id]);
+  const existing = existingResult.rows[0];
+  if (existing?.user_id && requester.role !== "admin" && existing.user_id !== requester.userId) {
+    throw unauthorized("Draft belongs to another user");
+  }
   const result = await pool.query(
     `
       insert into who_va_drafts (
         id,
+        user_id,
         draft,
         instrument_id,
         instrument_version,
         current_section
       )
-      values ($1, $2::jsonb, $3, $4, $5)
+      values ($1, $2, $3::jsonb, $4, $5, $6)
       on conflict (id) do update set
+        user_id = excluded.user_id,
         draft = excluded.draft,
         instrument_id = excluded.instrument_id,
         instrument_version = excluded.instrument_version,
         current_section = excluded.current_section,
         updated_at = now()
-      returning id, instrument_id, instrument_version, current_section, created_at, updated_at
+      returning id, user_id, instrument_id, instrument_version, current_section, created_at, updated_at
     `,
-    [draft.id, JSON.stringify(draft), draft.instrumentId, draft.instrumentVersion, draft.currentSection]
+    [
+      draft.id,
+      requester.userId,
+      JSON.stringify(draft),
+      draft.instrumentId,
+      draft.instrumentVersion,
+      draft.currentSection
+    ]
   );
 
   return result.rows[0];
 }
 
-async function loadDraft(id) {
+async function loadDraft(id, auth) {
   await ensureDraftTable();
-  const result = await pool.query("select draft from who_va_drafts where id = $1", [id]);
-  return result.rows[0]?.draft;
+  const requester = await loadAuthenticatedUser(auth);
+  const result = await pool.query("select user_id, draft from who_va_drafts where id = $1", [id]);
+  const row = result.rows[0];
+  if (row && requester.role !== "admin" && row.user_id !== requester.userId) {
+    throw unauthorized("Draft belongs to another user");
+  }
+  return row?.draft;
 }
 
-async function removeDraft(id) {
+async function removeDraft(id, auth) {
   await ensureDraftTable();
-  await pool.query("delete from who_va_drafts where id = $1", [id]);
+  const requester = await loadAuthenticatedUser(auth);
+  if (requester.role === "admin") {
+    await pool.query("delete from who_va_drafts where id = $1", [id]);
+    return;
+  }
+  await pool.query("delete from who_va_drafts where id = $1 and user_id = $2", [id, requester.userId]);
 }
-async function listFormEntries() {
+async function listFormEntries(auth) {
+  const requester = await loadAuthenticatedUser(auth);
+  const params = requester.role === "admin" ? [] : [requester.userId];
+  const userFilter = requester.role === "admin" ? "" : "where user_id = $1";
   const result = await pool.query(
     `
       select id, uid, user_id, status, created_at, updated_at, completed_at, case_entry, who_va_prefill
       from who_va_form_entries
+      ${userFilter}
       order by updated_at desc
       limit 100
-    `
+    `,
+    params
   );
 
   return result.rows.map((row) => ({
@@ -661,11 +834,48 @@ async function verifyUserAuthKey(userId, authKey) {
 }
 
 function authFromRequest(request, url) {
+  const authorization = String(request.headers.authorization ?? "");
+  const accessToken = authorization.toLowerCase().startsWith("bearer ")
+    ? authorization.slice("bearer ".length).trim()
+    : "";
   return {
+    accessToken,
     userId: String(request.headers["x-user-id"] ?? url.searchParams.get("userId") ?? "").trim(),
     authKey: String(request.headers["x-auth-key"] ?? url.searchParams.get("authKey") ?? "").trim()
   };
 }
+
+async function loadUserByAccessToken(accessToken) {
+  if (!accessToken) throw unauthorized("Access token is required");
+  await ensureUserSessionsTable();
+  const result = await pool.query(
+    `
+      select s.user_id
+      from who_va_user_sessions s
+      where s.access_token_hash = $1
+        and s.revoked_at is null
+        and s.access_expires_at > now()
+    `,
+    [hashSessionToken(accessToken)]
+  );
+  const session = result.rows[0];
+  if (!session) throw unauthorized("Access token is invalid or expired");
+  return userFromUserId(session.user_id);
+}
+
+async function loadAuthenticatedUser(auth) {
+  if (auth.accessToken) return loadUserByAccessToken(auth.accessToken);
+  return loadUserByAuthKey(auth.userId, auth.authKey);
+}
+
+async function requireAuthenticatedUser(request, url) {
+  const auth = authFromRequest(request, url);
+  if (!auth.accessToken && (!auth.userId || !auth.authKey)) {
+    throw unauthorized("Authorization is required");
+  }
+  return { auth, user: await loadAuthenticatedUser(auth) };
+}
+
 async function loadUserByAuthKey(userId, authKey) {
   if (!userId || !authKey) throw badRequest("userId and authKey are required");
   await ensureUsersTable();
@@ -691,8 +901,8 @@ async function loadUserByAuthKey(userId, authKey) {
   };
 }
 
-async function listMobileSyncEntries(userId, authKey) {
-  const requester = await loadUserByAuthKey(userId, authKey);
+async function listMobileSyncEntries(auth) {
+  const requester = await loadAuthenticatedUser(auth);
   const result = await pool.query(
     `
       select
@@ -730,9 +940,9 @@ async function listMobileSyncEntries(userId, authKey) {
   }));
 }
 
-async function listUserDashboard(userId, authKey) {
+async function listUserDashboard(auth) {
   await ensureDraftTable();
-  const requester = await loadUserByAuthKey(userId, authKey);
+  const requester = await loadAuthenticatedUser(auth);
   const params = requester.role === "admin" ? [] : [requester.userId];
   const userFilter = requester.role === "admin" ? "" : "where f.user_id = $1";
   const result = await pool.query(
@@ -973,8 +1183,8 @@ const server = createHttpServer(async (request, response) => {
     }
 
     if (url.pathname.startsWith("/api/attachments/") && request.method === "PUT") {
-      const auth = authFromRequest(request, url);
-      await verifyUserAuthKey(auth.userId, auth.authKey);
+      const { auth, user } = await requireAuthenticatedUser(request, url);
+      if (!auth.accessToken) await verifyUserAuthKey(user.userId, user.authKey);
       const id = decodeURIComponent(url.pathname.slice("/api/attachments/".length));
       const attachment = await saveAttachment(id, request);
       sendJson(request, response, 200, { ok: true, attachment });
@@ -997,27 +1207,35 @@ const server = createHttpServer(async (request, response) => {
     }
 
     if (url.pathname === "/api/form-entries" && request.method === "GET") {
-      const entries = await listFormEntries();
+      const { auth } = await requireAuthenticatedUser(request, url);
+      const entries = await listFormEntries(auth);
       sendJson(request, response, 200, { ok: true, entries });
       return;
     }
 
     if (url.pathname === "/api/form-entries" && request.method === "POST") {
-      const saved = await saveFormEntry(await readJsonBody(request));
+      const payload = await readJsonBody(request);
+      const { user: requester } = await requireAuthenticatedUser(request, url);
+      if (!payload.userId) payload.userId = requester.userId;
+      if (!payload.authKey && payload.userId === requester.userId) payload.authKey = requester.authKey;
+      if (payload.userId !== requester.userId && requester.role !== "admin") {
+        throw unauthorized("Token user mismatch");
+      }
+      const saved = await saveFormEntry(payload);
       sendJson(request, response, 200, { ok: true, saved });
       return;
     }
 
     if (url.pathname === "/api/dashboard" && request.method === "GET") {
-      const auth = authFromRequest(request, url);
-      const dashboard = await listUserDashboard(auth.userId, auth.authKey);
+      const { auth } = await requireAuthenticatedUser(request, url);
+      const dashboard = await listUserDashboard(auth);
       sendJson(request, response, 200, { ok: true, ...dashboard });
       return;
     }
 
     if (url.pathname === "/api/mobile-sync" && request.method === "GET") {
-      const auth = authFromRequest(request, url);
-      const entries = await listMobileSyncEntries(auth.userId, auth.authKey);
+      const { auth } = await requireAuthenticatedUser(request, url);
+      const entries = await listMobileSyncEntries(auth);
       sendJson(request, response, 200, { ok: true, entries });
       return;
     }
@@ -1029,21 +1247,37 @@ const server = createHttpServer(async (request, response) => {
     }
 
     if (url.pathname === "/api/login" && request.method === "POST") {
-      const user = await loginUser(await readJsonBody(request), request);
-      const entries = await listMobileSyncEntries(user.userId, user.authKey);
-      sendJson(request, response, 200, { ok: true, user, entries });
+      const payload = await readJsonBody(request);
+      const user = await loginUser(payload, request);
+      const session = await createUserSession(user.userId, payload.deviceId);
+      const entries = await listMobileSyncEntries({ accessToken: session.accessToken });
+      sendJson(request, response, 200, { ok: true, user, ...session, entries });
+      return;
+    }
+
+    if (url.pathname === "/api/refresh-token" && request.method === "POST") {
+      const session = await refreshUserSession(await readJsonBody(request));
+      sendJson(request, response, 200, { ok: true, ...session });
+      return;
+    }
+
+    if (url.pathname === "/api/logout" && request.method === "POST") {
+      await revokeUserSession(await readJsonBody(request), request);
+      sendJson(request, response, 200, { ok: true });
       return;
     }
 
     if (url.pathname === "/api/drafts" && request.method === "POST") {
-      const saved = await saveDraft(await readJsonBody(request));
+      const { auth } = await requireAuthenticatedUser(request, url);
+      const saved = await saveDraft(await readJsonBody(request), auth);
       sendJson(request, response, 200, { ok: true, saved });
       return;
     }
 
     if (url.pathname.startsWith("/api/drafts/") && request.method === "GET") {
       const id = decodeURIComponent(url.pathname.slice("/api/drafts/".length));
-      const draft = await loadDraft(id);
+      const { auth } = await requireAuthenticatedUser(request, url);
+      const draft = await loadDraft(id, auth);
       if (!draft) {
         sendJson(request, response, 404, { ok: false, error: "Draft not found" });
         return;
@@ -1054,7 +1288,8 @@ const server = createHttpServer(async (request, response) => {
 
     if (url.pathname.startsWith("/api/drafts/") && request.method === "DELETE") {
       const id = decodeURIComponent(url.pathname.slice("/api/drafts/".length));
-      await removeDraft(id);
+      const { auth } = await requireAuthenticatedUser(request, url);
+      await removeDraft(id, auth);
       sendJson(request, response, 200, { ok: true });
       return;
     }

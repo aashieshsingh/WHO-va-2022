@@ -2,6 +2,15 @@ import * as SQLite from "expo-sqlite";
 
 import { WHO_VA_FORM_VERSION, whoVa2022Instrument } from "@drguptavivek/who-2022-va";
 import type { SubmissionData, SubmissionValidationResult, WhoVaDraft } from "@drguptavivek/who-2022-va";
+import {
+  clearSecureAuthValues,
+  fetchWithAuth,
+  loadAuthSession,
+  loadStoredUserId,
+  saveAuthSession,
+  type AuthTokens
+} from "./AuthSession";
+import { clearDownloadedUserCaches } from "./UserFileCache";
 
 export type UserRole = "admin" | "data-entry";
 
@@ -23,6 +32,7 @@ export interface LoginPayload {
 
 export interface LoginResult {
   user: RegisteredUser;
+  tokens?: AuthTokens;
   fetchedServerRecords: number;
   importedServerRecords: number;
   syncWarning?: string;
@@ -76,6 +86,7 @@ type Database = SQLite.SQLiteDatabase;
 
 interface DraftRow {
   id: string;
+  user_id?: string | null;
   created_at: string;
   updated_at: string;
   payload: string;
@@ -157,6 +168,7 @@ export async function initializeLocalDatabase(): Promise<void> {
 
     CREATE TABLE IF NOT EXISTS drafts (
       id TEXT PRIMARY KEY NOT NULL,
+      user_id TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       payload TEXT NOT NULL
@@ -201,6 +213,9 @@ export async function initializeLocalDatabase(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_drafts_updated_at
       ON drafts(updated_at DESC);
 
+    CREATE INDEX IF NOT EXISTS idx_drafts_user_updated_at
+      ON drafts(user_id, updated_at DESC);
+
     CREATE INDEX IF NOT EXISTS idx_completed_submissions_sync_status
       ON completed_submissions(sync_status, completed_at DESC);
 
@@ -210,6 +225,7 @@ export async function initializeLocalDatabase(): Promise<void> {
   await addColumnIfMissing(database, "completed_submissions", "user_id", "TEXT");
   await addColumnIfMissing(database, "completed_submissions", "auth_key", "TEXT");
   await addColumnIfMissing(database, "completed_submissions", "case_entry", "TEXT");
+  await addColumnIfMissing(database, "drafts", "user_id", "TEXT");
 }
 
 function createLocalId(prefix: string): string {
@@ -371,9 +387,9 @@ async function importServerEntries(
   entries: ServerMobileSyncEntry[]
 ): Promise<Omit<ServerSyncResult, "fetched">> {
   const result: Omit<ServerSyncResult, "fetched"> = { imported: 0, skipped: 0, errors: [] };
-  const existingCasesByUid = new Map((await listCaseEntries()).map((entry) => [entry.uid, entry]));
+  const existingCasesByUid = new Map((await listCaseEntries(user.userId)).map((entry) => [entry.uid, entry]));
   const existingCompletedByCaseUid = new Map<string, CompletedSubmission>();
-  for (const submission of await listCompletedSubmissions()) {
+  for (const submission of await listCompletedSubmissions(user.userId)) {
     const caseUid = submission.result.data.__caseUid;
     const uid = typeof caseUid === "string" ? caseUid : submission.caseEntry?.uid;
     if (!uid) continue;
@@ -459,7 +475,7 @@ export async function syncServerDataForUser(
     if (!healthResponse.ok) {
       throw new Error(`health check returned HTTP ${healthResponse.status}`);
     }
-    response = await fetch(url, {
+    response = await fetchWithAuth(apiBaseUrl, "/api/mobile-sync", {
       headers: {
         "x-user-id": user.userId,
         "x-auth-key": user.authKey
@@ -512,12 +528,21 @@ export async function loginOnlineUser(data: LoginPayload, apiBaseUrl: string): P
   }
 
   const responseText = await response.text();
-  let body: { ok: boolean; user?: RegisteredUser; entries?: ServerMobileSyncEntry[]; error?: string };
+  let body: {
+    ok: boolean;
+    user?: RegisteredUser;
+    accessToken?: string;
+    refreshToken?: string;
+    entries?: ServerMobileSyncEntry[];
+    error?: string;
+  };
   try {
     body = responseText
       ? (JSON.parse(responseText) as {
           ok: boolean;
           user?: RegisteredUser;
+          accessToken?: string;
+          refreshToken?: string;
           entries?: ServerMobileSyncEntry[];
           error?: string;
         })
@@ -528,12 +553,22 @@ export async function loginOnlineUser(data: LoginPayload, apiBaseUrl: string): P
   if (!response.ok || !body.ok || !body.user?.authKey) {
     throw new Error(body.error ?? "Online login failed.");
   }
+  if (!body.accessToken || !body.refreshToken) {
+    throw new Error("Online login did not return access and refresh tokens.");
+  }
+  await saveAuthSession({
+    accessToken: body.accessToken,
+    refreshToken: body.refreshToken,
+    user: body.user,
+    apiBaseUrl
+  });
   await cacheServerUser(body.user, data.password);
   const serverEntries = body.entries ?? [];
   const importResult = await importServerEntries(body.user, serverEntries);
   await setCurrentUser(body.user.userId);
   return {
     user: body.user,
+    tokens: { accessToken: body.accessToken, refreshToken: body.refreshToken },
     fetchedServerRecords: serverEntries.length,
     importedServerRecords: importResult.imported,
     syncWarning: importResult.errors[0]
@@ -550,6 +585,8 @@ export async function setCurrentUser(userId: string): Promise<void> {
 }
 
 export async function loadCurrentUser(): Promise<RegisteredUser | undefined> {
+  const session = await loadAuthSession();
+  if (session?.user) return session.user;
   const database = await openDatabase();
   const row = await database.getFirstAsync<UserRow>(
     `
@@ -567,34 +604,62 @@ export async function logoutCurrentUser(): Promise<void> {
   await database.runAsync("DELETE FROM current_user WHERE id = 1");
 }
 
-export async function listDrafts(): Promise<WhoVaDraft[]> {
+export async function clearUserSession(userId?: string): Promise<void> {
+  const resolvedUserId = userId ?? (await loadStoredUserId());
+  const database = await openDatabase();
+  if (resolvedUserId) {
+    await database.runAsync("DELETE FROM drafts WHERE user_id = ? OR user_id IS NULL", resolvedUserId);
+    await database.runAsync(
+      "DELETE FROM completed_submissions WHERE user_id = ? OR user_id IS NULL",
+      resolvedUserId
+    );
+    await database.runAsync("DELETE FROM case_entries WHERE user_id = ?", resolvedUserId);
+    await database.runAsync("DELETE FROM current_user WHERE id = 1");
+    await database.runAsync("DELETE FROM users WHERE user_id = ?", resolvedUserId);
+  } else {
+    await database.runAsync("DELETE FROM drafts WHERE user_id IS NULL");
+    await database.runAsync("DELETE FROM completed_submissions WHERE user_id IS NULL");
+    await database.runAsync("DELETE FROM current_user WHERE id = 1");
+  }
+  await clearDownloadedUserCaches();
+  await clearSecureAuthValues();
+}
+
+export async function listDrafts(userId?: string): Promise<WhoVaDraft[]> {
+  if (!userId) return [];
   const database = await openDatabase();
   const rows = await database.getAllAsync<DraftRow>(
-    "SELECT id, created_at, updated_at, payload FROM drafts ORDER BY updated_at DESC"
+    "SELECT id, user_id, created_at, updated_at, payload FROM drafts WHERE user_id = ? ORDER BY updated_at DESC",
+    userId
   );
   return rows.map((row) => decodeJson<WhoVaDraft>(row.payload, `draft ${row.id}`));
 }
 
-export async function loadDraft(id: string): Promise<WhoVaDraft | undefined> {
+export async function loadDraft(id: string, userId?: string): Promise<WhoVaDraft | undefined> {
+  if (!userId) return undefined;
   const database = await openDatabase();
   const row = await database.getFirstAsync<DraftRow>(
-    "SELECT id, created_at, updated_at, payload FROM drafts WHERE id = ?",
-    id
+    "SELECT id, user_id, created_at, updated_at, payload FROM drafts WHERE id = ? AND user_id = ?",
+    id,
+    userId
   );
   return row ? decodeJson<WhoVaDraft>(row.payload, `draft ${row.id}`) : undefined;
 }
 
-export async function saveDraft(draft: WhoVaDraft): Promise<void> {
+export async function saveDraft(draft: WhoVaDraft, userId?: string): Promise<void> {
+  if (!userId) throw new Error("Login before saving drafts.");
   const database = await openDatabase();
   await database.runAsync(
     `
-      INSERT INTO drafts (id, created_at, updated_at, payload)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO drafts (id, user_id, created_at, updated_at, payload)
+      VALUES (?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
+        user_id = excluded.user_id,
         updated_at = excluded.updated_at,
         payload = excluded.payload
     `,
     draft.id,
+    userId,
     draft.createdAt,
     draft.updatedAt,
     JSON.stringify(draft)
@@ -606,14 +671,17 @@ export async function removeDraft(id: string): Promise<void> {
   await database.runAsync("DELETE FROM drafts WHERE id = ?", id);
 }
 
-export async function listCompletedSubmissions(): Promise<CompletedSubmission[]> {
+export async function listCompletedSubmissions(userId?: string): Promise<CompletedSubmission[]> {
+  if (!userId) return [];
   const database = await openDatabase();
   const rows = await database.getAllAsync<CompletedSubmissionRow>(
     `
       SELECT id, completed_at, payload, sync_status, user_id, auth_key, case_entry
       FROM completed_submissions
+      WHERE user_id = ?
       ORDER BY completed_at DESC
-    `
+    `,
+    userId
   );
   return rows.flatMap((row) => {
     try {
@@ -736,10 +804,12 @@ export async function saveCaseEntry(entry: StoredCaseEntry): Promise<void> {
   );
 }
 
-export async function listCaseEntries(): Promise<StoredCaseEntry[]> {
+export async function listCaseEntries(userId?: string): Promise<StoredCaseEntry[]> {
+  if (!userId) return [];
   const database = await openDatabase();
   const rows = await database.getAllAsync<CaseEntryRow>(
-    "SELECT uid, user_id, case_entry, who_va_data, updated_at FROM case_entries ORDER BY updated_at DESC"
+    "SELECT uid, user_id, case_entry, who_va_data, updated_at FROM case_entries WHERE user_id = ? ORDER BY updated_at DESC",
+    userId
   );
   return rows.flatMap((row) => {
     try {
@@ -758,6 +828,6 @@ export async function listCaseEntries(): Promise<StoredCaseEntry[]> {
   });
 }
 
-export async function loadCaseEntry(uid: string): Promise<StoredCaseEntry | undefined> {
-  return (await listCaseEntries()).find((entry) => entry.uid === uid);
+export async function loadCaseEntry(uid: string, userId?: string): Promise<StoredCaseEntry | undefined> {
+  return (await listCaseEntries(userId)).find((entry) => entry.uid === uid);
 }

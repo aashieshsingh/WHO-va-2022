@@ -10,6 +10,7 @@ import type {
 } from "@drguptavivek/who-2022-va";
 
 import {
+  clearUserSession,
   createEntryUid,
   initializeLocalDatabase,
   listCaseEntries,
@@ -33,6 +34,7 @@ import {
   type ServerSyncResult,
   type StoredCaseEntry
 } from "./LocalDatabase";
+import { revokeRefreshToken, SessionExpiredError } from "./AuthSession";
 import { pushLocalDataToServer, type PushResult } from "./ServerSync";
 export type { CaseEntryData, CompletedSubmission, RegisteredUser, StoredCaseEntry } from "./LocalDatabase";
 
@@ -53,6 +55,7 @@ interface DemoState {
   getDraft(id: string | undefined): WhoVaDraft | undefined;
   login(payload: LoginPayload, apiBaseUrl?: string): Promise<void>;
   logout(): Promise<void>;
+  switchUser(apiBaseUrl?: string): Promise<void>;
   pushToServer(apiBaseUrl?: string, submissionIds?: string[]): Promise<PushResult>;
   syncFromServer(apiBaseUrl?: string): Promise<ServerSyncResult>;
   saveCase(caseEntry: CaseEntryData): Promise<StoredCaseEntry>;
@@ -94,11 +97,19 @@ export function DemoStateProvider({ children }: { children: ReactNode }) {
   const [users, setUsers] = useState<RegisteredUser[]>([]);
   const [serverApiBaseUrl, setServerApiBaseUrl] = useState(API_BASE_URL);
 
-  const refreshLocalData = useCallback(async () => {
+  const resetUserState = useCallback(() => {
+    setDrafts([]);
+    setCompleted([]);
+    setCases([]);
+    setCurrentUser(undefined);
+    setNewFormKey((current) => current + 1);
+  }, []);
+
+  const refreshLocalData = useCallback(async (userId?: string) => {
     const [savedDrafts, savedCompleted, savedCases, savedUsers] = await Promise.all([
-      listDrafts(),
-      listCompletedSubmissions(),
-      listCaseEntries(),
+      listDrafts(userId),
+      listCompletedSubmissions(userId),
+      listCaseEntries(userId),
       listUsers()
     ]);
     setDrafts(savedDrafts);
@@ -114,7 +125,7 @@ export function DemoStateProvider({ children }: { children: ReactNode }) {
       .then(async () => {
         const savedUser = await loadCurrentUser();
         if (isMounted) setCurrentUser(savedUser);
-        await refreshLocalData();
+        await refreshLocalData(savedUser?.userId);
       })
       .then(() => {
         if (!isMounted) return;
@@ -134,23 +145,24 @@ export function DemoStateProvider({ children }: { children: ReactNode }) {
   const draftStore = useMemo<WhoVaDraftStore>(() => {
     return {
       async save(draft) {
+        if (!currentUser) throw new Error("Login before saving drafts.");
         setDrafts((current) =>
           [draft, ...current.filter((savedDraft) => savedDraft.id !== draft.id)].sort(
             (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
           )
         );
-        await saveDraft(draft);
-        await refreshLocalData();
+        await saveDraft(draft, currentUser.userId);
+        await refreshLocalData(currentUser.userId);
       },
       async load(id) {
-        return loadDraft(id);
+        return loadDraft(id, currentUser?.userId);
       },
       async remove(id) {
         await removeDraft(id);
-        await refreshLocalData();
+        await refreshLocalData(currentUser?.userId);
       }
     };
-  }, [refreshLocalData]);
+  }, [currentUser, refreshLocalData]);
 
   const value = useMemo<DemoState>(
     () => ({
@@ -172,7 +184,7 @@ export function DemoStateProvider({ children }: { children: ReactNode }) {
         };
         setCompleted((current) => [submission, ...current]);
         void saveCompletedSubmission(submission)
-          .then(refreshLocalData)
+          .then(() => refreshLocalData(currentUser?.userId))
           .catch((error: unknown) => {
             setLastUpdate(`Local submission save failed: ${(error as Error).message}`);
           });
@@ -195,6 +207,11 @@ export function DemoStateProvider({ children }: { children: ReactNode }) {
       isDatabaseReady,
       async login(payload, apiBaseUrl) {
         const targetApiBaseUrl = apiBaseUrl?.trim() || API_BASE_URL;
+        if (currentUser) {
+          await revokeRefreshToken(serverApiBaseUrl);
+          await clearUserSession(currentUser.userId);
+          resetUserState();
+        }
         const loginResult = await loginOnlineUser(payload, targetApiBaseUrl);
         const { fetchedServerRecords, importedServerRecords, syncWarning, user } = loginResult;
         setServerApiBaseUrl(targetApiBaseUrl);
@@ -207,23 +224,42 @@ export function DemoStateProvider({ children }: { children: ReactNode }) {
                 : `. No server records found for ${syncUserLabel(user)}.`
             }`
         );
-        await refreshLocalData();
+        await refreshLocalData(user.userId);
       },
       async logout() {
+        await revokeRefreshToken(serverApiBaseUrl);
+        await clearUserSession(currentUser?.userId);
         await logoutCurrentUser();
-        setCurrentUser(undefined);
+        resetUserState();
         setLastUpdate("Signed out");
       },
+      async switchUser(apiBaseUrl) {
+        await revokeRefreshToken(apiBaseUrl?.trim() || serverApiBaseUrl);
+        await clearUserSession(currentUser?.userId);
+        await logoutCurrentUser();
+        resetUserState();
+        setLastUpdate("Signed out. Login with the next account.");
+      },
       async pushToServer(apiBaseUrl, submissionIds) {
-        const result = await pushLocalDataToServer({
-          apiBaseUrl: apiBaseUrl?.trim() || serverApiBaseUrl,
-          cases,
-          completed,
-          currentUser,
-          drafts,
-          submissionIds
-        });
-        await refreshLocalData();
+        let result: PushResult;
+        try {
+          result = await pushLocalDataToServer({
+            apiBaseUrl: apiBaseUrl?.trim() || serverApiBaseUrl,
+            cases,
+            completed,
+            currentUser,
+            drafts,
+            submissionIds
+          });
+        } catch (error) {
+          if (error instanceof SessionExpiredError) {
+            await clearUserSession(currentUser?.userId);
+            resetUserState();
+            setLastUpdate(error.message);
+          }
+          throw error;
+        }
+        await refreshLocalData(currentUser?.userId);
         const messageParts = [`Pushed ${result.pushed} entries`];
         if (result.skipped) messageParts.push(`${result.skipped} skipped`);
         if (result.failed) messageParts.push(`${result.failed} failed`);
@@ -234,8 +270,18 @@ export function DemoStateProvider({ children }: { children: ReactNode }) {
         if (!currentUser) throw new Error("Login before syncing server data.");
         const targetApiBaseUrl = apiBaseUrl?.trim() || serverApiBaseUrl;
         setServerApiBaseUrl(targetApiBaseUrl);
-        const result = await syncServerDataForUser(currentUser, targetApiBaseUrl);
-        await refreshLocalData();
+        let result: ServerSyncResult;
+        try {
+          result = await syncServerDataForUser(currentUser, targetApiBaseUrl);
+        } catch (error) {
+          if (error instanceof SessionExpiredError) {
+            await clearUserSession(currentUser.userId);
+            resetUserState();
+            setLastUpdate(error.message);
+          }
+          throw error;
+        }
+        await refreshLocalData(currentUser.userId);
         setLastUpdate(
           result.fetched
             ? `Found ${result.fetched} server records; imported ${result.imported}; skipped ${result.skipped}.${
@@ -262,7 +308,7 @@ export function DemoStateProvider({ children }: { children: ReactNode }) {
           updatedAt: new Date().toISOString()
         };
         await saveCaseEntry(stored);
-        await refreshLocalData();
+        await refreshLocalData(currentUser.userId);
         setLastUpdate(`Case saved: ${caseEntry.deceasedFullName}`);
         return stored;
       },
@@ -278,6 +324,7 @@ export function DemoStateProvider({ children }: { children: ReactNode }) {
       lastUpdate,
       newFormKey,
       refreshLocalData,
+      resetUserState,
       serverApiBaseUrl,
       users
     ]
