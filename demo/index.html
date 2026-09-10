@@ -16,6 +16,7 @@
         <button id="show-login" type="button">Login</button>
         <button id="show-registration" type="button">Register user</button>
         <button id="show-dashboard" type="button" hidden>Dashboard</button>
+        <button id="show-profile" type="button" hidden>Profile</button>
         <button id="new-case-entry" type="button">Case data entry</button>
         <button id="logout-user" type="button" hidden>Logout</button>
         <button id="header-start-selected-entry" class="start-selected-entry" type="button" disabled>
@@ -66,10 +67,137 @@
           </div>
           <div class="entry-actions">
             <button id="admin-register-user" type="button">Register another user</button>
+            <button id="admin-manage-users" type="button">Manage users</button>
             <button id="admin-open-data-entry" type="button">Open data entry</button>
             <button id="admin-open-dashboard" type="button">Open dashboard</button>
           </div>
         </div>
+      </section>
+      <section id="user-management-shell" class="entry-shell" aria-labelledby="user-management-title" hidden>
+        <form id="user-management-form" class="entry-form">
+          <div class="entry-form__header">
+            <div>
+              <h2 id="user-management-title">Manage users</h2>
+              <p>Select a user and update account credentials.</p>
+            </div>
+            <label>
+              <span>User</span>
+              <select id="managed-user-select" required>
+                <option value="">No users loaded</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="entry-grid">
+            <label>
+              <span>Name</span>
+              <input
+                name="name"
+                type="text"
+                autocomplete="name"
+                pattern="[A-Za-z]+(?: [A-Za-z]+)*"
+                title="Use letters only. Spaces are allowed between words."
+                required
+              />
+            </label>
+            <label>
+              <span>Email</span>
+              <input name="email" type="email" autocomplete="email" required />
+            </label>
+            <label>
+              <span>Role</span>
+              <select name="role" required>
+                <option value="">Select role</option>
+                <option value="admin">Admin</option>
+                <option value="data-entry">Data entry</option>
+              </select>
+            </label>
+            <label>
+              <span>Partner site</span>
+              <select name="partnerSite" required>
+                <option value="">Select partner site</option>
+                <option value="AIIMS">AIIMS</option>
+                <option value="ICMR">ICMR</option>
+                <option value="WHO Collaborating Centre">WHO Collaborating Centre</option>
+              </select>
+            </label>
+            <label>
+              <span>Site assigned</span>
+              <select name="siteAssigned" required>
+                <option value="">Select assigned site</option>
+                <option value="Bhopal">Bhopal</option>
+                <option value="Delhi">Delhi</option>
+                <option value="Mumbai">Mumbai</option>
+                <option value="Pune">Pune</option>
+              </select>
+            </label>
+            <label>
+              <span>New password</span>
+              <input
+                name="password"
+                type="password"
+                autocomplete="new-password"
+                minlength="8"
+                title="Leave blank to keep the current password."
+              />
+            </label>
+          </div>
+
+          <div class="entry-actions">
+            <button id="refresh-managed-users" type="button">Refresh users</button>
+            <button type="submit">Save changes</button>
+          </div>
+        </form>
+        <output id="user-management-output" class="entry-output" hidden></output>
+      </section>
+      <section id="profile-shell" class="entry-shell" aria-labelledby="profile-title" hidden>
+        <div class="entry-form">
+          <div class="entry-form__header">
+            <div>
+              <h2 id="profile-title">User profile</h2>
+              <p>View your account details and update your password.</p>
+            </div>
+          </div>
+
+          <dl id="profile-details" class="profile-details" aria-label="User details"></dl>
+
+          <form id="password-change-form" class="password-change-form">
+            <fieldset class="entry-section">
+              <legend>Change password</legend>
+              <div class="entry-grid">
+                <label>
+                  <span>Current password</span>
+                  <input name="currentPassword" type="password" autocomplete="current-password" required />
+                </label>
+                <label>
+                  <span>New password</span>
+                  <input
+                    name="newPassword"
+                    type="password"
+                    autocomplete="new-password"
+                    minlength="8"
+                    required
+                  />
+                </label>
+                <label>
+                  <span>Confirm new password</span>
+                  <input
+                    name="confirmPassword"
+                    type="password"
+                    autocomplete="new-password"
+                    minlength="8"
+                    required
+                  />
+                </label>
+              </div>
+            </fieldset>
+
+            <div class="entry-actions">
+              <button type="submit">Change password</button>
+            </div>
+          </form>
+        </div>
+        <output id="profile-output" class="entry-output" hidden></output>
       </section>
       <section id="dashboard-shell" class="dashboard-shell" aria-labelledby="dashboard-title" hidden>
         <div class="dashboard-header">

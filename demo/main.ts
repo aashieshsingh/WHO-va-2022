@@ -49,9 +49,23 @@ interface RegisterUserPayload {
   password: string;
 }
 
+interface AdminUserUpdatePayload {
+  name: string;
+  email: string;
+  role: UserRole | "";
+  partnerSite: string;
+  siteAssigned: string;
+  password?: string;
+}
+
 interface LoginPayload {
   email: string;
   password: string;
+}
+
+interface ChangePasswordPayload {
+  currentPassword: string;
+  newPassword: string;
 }
 
 interface LoginResult {
@@ -108,11 +122,13 @@ interface StoredCaseEntry {
 }
 
 type DashboardFormStatus = "pending" | "drafted" | "final";
+type DashboardFormType = "Adult" | "Child" | "Neonatal" | "Not set";
 
 interface DashboardFormEntry {
   id: number;
   uid: string;
   status: DashboardFormStatus;
+  formType?: DashboardFormType;
   sourceStatus: string;
   createdAt: string;
   updatedAt: string;
@@ -192,10 +208,21 @@ const loginOutput = document.querySelector<HTMLOutputElement>("#login-output");
 const adminShell = document.querySelector<HTMLElement>("#admin-shell");
 const adminSummary = document.querySelector<HTMLElement>("#admin-summary");
 const adminRegisterUser = document.querySelector<HTMLButtonElement>("#admin-register-user");
+const adminManageUsers = document.querySelector<HTMLButtonElement>("#admin-manage-users");
 const adminOpenDataEntry = document.querySelector<HTMLButtonElement>("#admin-open-data-entry");
 const adminOpenDashboard = document.querySelector<HTMLButtonElement>("#admin-open-dashboard");
 const showDashboard = document.querySelector<HTMLButtonElement>("#show-dashboard");
+const showProfile = document.querySelector<HTMLButtonElement>("#show-profile");
 const logoutUser = document.querySelector<HTMLButtonElement>("#logout-user");
+const userManagementShell = document.querySelector<HTMLElement>("#user-management-shell");
+const userManagementForm = document.querySelector<HTMLFormElement>("#user-management-form");
+const managedUserSelect = document.querySelector<HTMLSelectElement>("#managed-user-select");
+const refreshManagedUsers = document.querySelector<HTMLButtonElement>("#refresh-managed-users");
+const userManagementOutput = document.querySelector<HTMLOutputElement>("#user-management-output");
+const profileShell = document.querySelector<HTMLElement>("#profile-shell");
+const profileDetails = document.querySelector<HTMLElement>("#profile-details");
+const passwordChangeForm = document.querySelector<HTMLFormElement>("#password-change-form");
+const profileOutput = document.querySelector<HTMLOutputElement>("#profile-output");
 const dashboardShell = document.querySelector<HTMLElement>("#dashboard-shell");
 const dashboardSummary = document.querySelector<HTMLElement>("#dashboard-summary");
 const dashboardTotals = document.querySelector<HTMLElement>("#dashboard-totals");
@@ -228,6 +255,7 @@ const whoVaOutput = document.querySelector<HTMLOutputElement>("#who-va-output");
 let currentCaseEntry: CaseEntryData | undefined;
 let currentWhoVaData: Record<string, unknown> | undefined;
 let currentUser: RegisteredUser | undefined;
+let managedUsers: RegisteredUser[] = [];
 
 const deathPlaceLabels: Record<DeathPlace, string> = {
   "hospital-death": "Hospital death",
@@ -272,11 +300,22 @@ const createEntryUid = () => {
 };
 
 const setVisibleStep = (
-  step: "login" | "registration" | "admin" | "dashboard" | "picker" | "entry" | "instrument"
+  step:
+    | "login"
+    | "registration"
+    | "admin"
+    | "user-management"
+    | "profile"
+    | "dashboard"
+    | "picker"
+    | "entry"
+    | "instrument"
 ) => {
   if (loginShell) loginShell.hidden = step !== "login";
   if (registrationShell) registrationShell.hidden = step !== "registration";
   if (adminShell) adminShell.hidden = step !== "admin";
+  if (userManagementShell) userManagementShell.hidden = step !== "user-management";
+  if (profileShell) profileShell.hidden = step !== "profile";
   if (dashboardShell) dashboardShell.hidden = step !== "dashboard";
   if (casePickerShell) casePickerShell.hidden = step !== "picker";
   if (entryShell) entryShell.hidden = step !== "entry";
@@ -290,6 +329,7 @@ const updateAccessControls = () => {
   if (showLogin) showLogin.hidden = currentUser != null;
   if (showRegistration) showRegistration.hidden = currentUser != null && !hasAdminAccess();
   if (showDashboard) showDashboard.hidden = currentUser == null;
+  if (showProfile) showProfile.hidden = currentUser == null;
   if (logoutUser) logoutUser.hidden = currentUser == null;
   if (newCaseEntry) newCaseEntry.hidden = !hasDataEntryAccess();
   for (const button of startSelectedEntries) {
@@ -584,6 +624,75 @@ const showRegistrationOutput = (value: unknown) => {
 };
 
 const usersApiUrl = () => apiUrl("/api/users");
+const profileApiUrl = () => apiUrl("/api/profile");
+const passwordApiUrl = () => apiUrl("/api/profile/password");
+
+const roleLabel = (role: string) => {
+  if (role === "admin") return "Admin";
+  if (role === "data-entry") return "Data entry";
+  return role || "Not recorded";
+};
+
+const renderProfileDetails = () => {
+  if (!profileDetails) return;
+  profileDetails.replaceChildren();
+  if (!currentUser) return;
+
+  const details = [
+    ["Name", currentUser.name],
+    ["Email", currentUser.email],
+    ["User ID", currentUser.userId],
+    ["Role", roleLabel(currentUser.role)],
+    ["Partner site", currentUser.partnerSite],
+    ["Site assigned", currentUser.siteAssigned],
+    ["Created", formatDateTime(currentUser.createdAt)]
+  ];
+
+  for (const [label, value] of details) {
+    const term = document.createElement("dt");
+    term.textContent = label;
+    const description = document.createElement("dd");
+    description.textContent = value || "Not recorded";
+    profileDetails.append(term, description);
+  }
+};
+
+const showProfileOutput = (value: unknown) => {
+  if (!profileOutput) return;
+  profileOutput.hidden = false;
+  profileOutput.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+};
+
+const loadCurrentUserProfile = async (): Promise<RegisteredUser> => {
+  const response = await fetchApi(profileApiUrl(), { headers: authHeaders() });
+  const body = await readJsonResponse<{ ok: boolean; user?: RegisteredUser; error?: string }>(response);
+  if (!response.ok || !body.ok || !body.user) {
+    throw new Error(body.error ?? `Profile could not be loaded. Status: ${response.status}.`);
+  }
+  return body.user;
+};
+
+const openProfile = async () => {
+  if (!currentUser) {
+    showLoginOutput("Login before opening your profile.");
+    setVisibleStep("login");
+    loginShell?.scrollIntoView({ block: "start" });
+    return;
+  }
+  renderProfileDetails();
+  if (profileOutput) {
+    profileOutput.hidden = true;
+    profileOutput.textContent = "";
+  }
+  try {
+    currentUser = await loadCurrentUserProfile();
+    renderProfileDetails();
+  } catch (error) {
+    showProfileOutput(error instanceof Error ? error.message : String(error));
+  }
+  setVisibleStep("profile");
+  profileShell?.scrollIntoView({ block: "start" });
+};
 
 const readRegistrationData = (sourceForm: HTMLFormElement): RegisterUserPayload => {
   const formData = new FormData(sourceForm);
@@ -611,6 +720,18 @@ const validateRegistrationData = (data: RegisterUserPayload): string | undefined
   return undefined;
 };
 
+const validateManagedUserData = (data: AdminUserUpdatePayload): string | undefined => {
+  if (!/^[A-Za-z]+(?: [A-Za-z]+)*$/u.test(data.name)) {
+    return "Name accepts letters only. Spaces are allowed between words.";
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(data.email)) return "Enter a valid email address.";
+  if (data.role !== "admin" && data.role !== "data-entry") return "Select a valid role.";
+  if (!data.partnerSite) return "Select a partner site.";
+  if (!data.siteAssigned) return "Select an assigned site.";
+  if (data.password && data.password.length < 8) return "Password must be at least 8 characters.";
+  return undefined;
+};
+
 const registerUser = async (payload: RegisterUserPayload): Promise<RegisteredUser> => {
   const response = await fetchApi(usersApiUrl(), {
     method: "POST",
@@ -620,6 +741,161 @@ const registerUser = async (payload: RegisterUserPayload): Promise<RegisteredUse
   const body = await readJsonResponse<{ ok: boolean; user?: RegisteredUser; error?: string }>(response);
   if (!response.ok || !body.ok || !body.user) {
     throw new Error(body.error ?? `User could not be registered. Status: ${response.status}.`);
+  }
+  return body.user;
+};
+
+const userApiUrl = (userId: string) => `${usersApiUrl()}/${encodeURIComponent(userId)}`;
+
+const showUserManagementOutput = (value: unknown) => {
+  if (!userManagementOutput) return;
+  userManagementOutput.hidden = false;
+  userManagementOutput.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+};
+
+const readManagedUserData = (sourceForm: HTMLFormElement): AdminUserUpdatePayload => {
+  const formData = new FormData(sourceForm);
+  const password = String(formData.get("password") ?? "");
+  return {
+    name: String(formData.get("name") ?? "").trim(),
+    email: String(formData.get("email") ?? "")
+      .trim()
+      .toLowerCase(),
+    role: String(formData.get("role") ?? "").trim() as UserRole | "",
+    partnerSite: String(formData.get("partnerSite") ?? "").trim(),
+    siteAssigned: String(formData.get("siteAssigned") ?? "").trim(),
+    ...(password ? { password } : {})
+  };
+};
+
+const loadManagedUsers = async (): Promise<RegisteredUser[]> => {
+  const response = await fetchApi(usersApiUrl(), { headers: authHeaders() });
+  const body = await readJsonResponse<{ ok: boolean; users?: RegisteredUser[]; error?: string }>(response);
+  if (!response.ok || !body.ok) {
+    throw new Error(body.error ?? `Users could not be loaded. Status: ${response.status}.`);
+  }
+  return body.users ?? [];
+};
+
+const updateManagedUser = async (
+  userId: string,
+  payload: AdminUserUpdatePayload
+): Promise<RegisteredUser> => {
+  const response = await fetchApi(userApiUrl(userId), {
+    method: "PATCH",
+    headers: { "content-type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload)
+  });
+  const body = await readJsonResponse<{ ok: boolean; user?: RegisteredUser; error?: string }>(response);
+  if (!response.ok || !body.ok || !body.user) {
+    throw new Error(body.error ?? `User could not be updated. Status: ${response.status}.`);
+  }
+  return body.user;
+};
+
+const populateManagedUserForm = (userId: string) => {
+  const user = managedUsers.find((candidate) => candidate.userId === userId);
+  if (!userManagementForm || !user) return;
+  const setValue = (name: string, value: string) => {
+    const control = userManagementForm.elements.namedItem(name) as
+      | HTMLInputElement
+      | HTMLSelectElement
+      | null;
+    if (control) control.value = value;
+  };
+  setValue("name", user.name);
+  setValue("email", user.email);
+  setValue("role", user.role);
+  setValue("partnerSite", user.partnerSite);
+  setValue("siteAssigned", user.siteAssigned);
+  setValue("password", "");
+};
+
+const renderManagedUserSelect = (selectedUserId = managedUserSelect?.value ?? "") => {
+  if (!managedUserSelect) return;
+  managedUserSelect.replaceChildren();
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = managedUsers.length ? "Select user" : "No users found";
+  managedUserSelect.append(placeholder);
+
+  for (const user of managedUsers) {
+    const option = document.createElement("option");
+    option.value = user.userId;
+    option.textContent = `${user.name} (${user.email}) - ${roleLabel(user.role)}`;
+    option.selected = user.userId === selectedUserId;
+    managedUserSelect.append(option);
+  }
+
+  const nextUserId = managedUsers.some((user) => user.userId === selectedUserId)
+    ? selectedUserId
+    : (managedUsers[0]?.userId ?? "");
+  managedUserSelect.value = nextUserId;
+  populateManagedUserForm(nextUserId);
+};
+
+const refreshManagedUserList = async (selectedUserId = managedUserSelect?.value ?? "") => {
+  if (!hasAdminAccess()) {
+    showLoginOutput("Only admin users can manage user accounts.");
+    setVisibleStep("login");
+    return;
+  }
+  showUserManagementOutput("Loading users...");
+  managedUsers = await loadManagedUsers();
+  renderManagedUserSelect(selectedUserId);
+  if (userManagementOutput) {
+    userManagementOutput.hidden = true;
+    userManagementOutput.textContent = "";
+  }
+};
+
+const openUserManagement = async () => {
+  if (!hasAdminAccess()) {
+    showLoginOutput("Only admin users can manage user accounts.");
+    setVisibleStep("login");
+    loginShell?.scrollIntoView({ block: "start" });
+    return;
+  }
+  setVisibleStep("user-management");
+  userManagementShell?.scrollIntoView({ block: "start" });
+  try {
+    await refreshManagedUserList();
+  } catch (error) {
+    showUserManagementOutput(error instanceof Error ? error.message : String(error));
+  }
+};
+
+const readPasswordChangeData = (sourceForm: HTMLFormElement): ChangePasswordPayload & {
+  confirmPassword: string;
+} => {
+  const formData = new FormData(sourceForm);
+  return {
+    currentPassword: String(formData.get("currentPassword") ?? ""),
+    newPassword: String(formData.get("newPassword") ?? ""),
+    confirmPassword: String(formData.get("confirmPassword") ?? "")
+  };
+};
+
+const validatePasswordChangeData = (
+  data: ChangePasswordPayload & { confirmPassword: string }
+): string | undefined => {
+  if (!data.currentPassword) return "Enter your current password.";
+  if (data.newPassword.length < 8 || data.newPassword.length > 128) {
+    return "New password must be between 8 and 128 characters.";
+  }
+  if (data.newPassword !== data.confirmPassword) return "New password and confirmation do not match.";
+  return undefined;
+};
+
+const changeCurrentUserPassword = async (payload: ChangePasswordPayload): Promise<RegisteredUser> => {
+  const response = await fetchApi(passwordApiUrl(), {
+    method: "POST",
+    headers: { "content-type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload)
+  });
+  const body = await readJsonResponse<{ ok: boolean; user?: RegisteredUser; error?: string }>(response);
+  if (!response.ok || !body.ok || !body.user) {
+    throw new Error(body.error ?? `Password could not be changed. Status: ${response.status}.`);
   }
   return body.user;
 };
@@ -676,6 +952,19 @@ const logoutCurrentUser = () => {
   if (dashboardOutput) {
     dashboardOutput.hidden = true;
     dashboardOutput.textContent = "";
+  }
+  passwordChangeForm?.reset();
+  if (profileDetails) profileDetails.replaceChildren();
+  if (profileOutput) {
+    profileOutput.hidden = true;
+    profileOutput.textContent = "";
+  }
+  managedUsers = [];
+  userManagementForm?.reset();
+  managedUserSelect?.replaceChildren();
+  if (userManagementOutput) {
+    userManagementOutput.hidden = true;
+    userManagementOutput.textContent = "";
   }
   form?.setLockedQuestionNames([]);
   form?.setData({});
@@ -936,6 +1225,16 @@ const dashboardActionLabel = (status: DashboardFormStatus) => {
   return "Start form";
 };
 
+const selectedFlag = (value: unknown) => value === "1" || value === 1 || value === true;
+
+const dashboardFormTypeLabel = (whoVaData?: Record<string, unknown>): DashboardFormType => {
+  if (!whoVaData) return "Not set";
+  if (selectedFlag(whoVaData.isAdult) || whoVaData.age_group === "adult") return "Adult";
+  if (selectedFlag(whoVaData.isChild) || whoVaData.age_group === "child") return "Child";
+  if (selectedFlag(whoVaData.isNeonatal) || whoVaData.age_group === "neonate") return "Neonatal";
+  return "Not set";
+};
+
 const createStatusTotal = (label: string, value: number) => {
   const item = document.createElement("div");
   item.className = "dashboard-total";
@@ -1026,6 +1325,7 @@ const renderDashboard = (users: DashboardUserGroup[]) => {
         <tr>
           <th>UID</th>
           <th>Deceased</th>
+          <th>Form type</th>
           <th>Status</th>
           <th>Last update</th>
           <th>Action</th>
@@ -1039,6 +1339,8 @@ const renderDashboard = (users: DashboardUserGroup[]) => {
       uid.textContent = formEntry.uid;
       const deceased = document.createElement("td");
       deceased.textContent = formEntry.caseEntry?.deceasedFullName ?? "Not recorded";
+      const formType = document.createElement("td");
+      formType.textContent = formEntry.formType ?? dashboardFormTypeLabel(formEntry.whoVaData);
       const status = document.createElement("td");
       const statusBadge = document.createElement("span");
       statusBadge.className = `dashboard-status dashboard-status--${formEntry.status}`;
@@ -1060,7 +1362,7 @@ const renderDashboard = (users: DashboardUserGroup[]) => {
         });
       });
       action.append(actionButton);
-      row.append(uid, deceased, status, updated, action);
+      row.append(uid, deceased, formType, status, updated, action);
       body.append(row);
     }
     table.append(body);
@@ -1102,6 +1404,10 @@ showLogin?.addEventListener("click", () => {
   loginShell?.scrollIntoView({ block: "start" });
 });
 
+showProfile?.addEventListener("click", () => {
+  void openProfile();
+});
+
 logoutUser?.addEventListener("click", () => {
   logoutCurrentUser();
 });
@@ -1110,6 +1416,10 @@ adminRegisterUser?.addEventListener("click", () => {
   if (!requireAdminAccess()) return;
   setVisibleStep("registration");
   registrationShell?.scrollIntoView({ block: "start" });
+});
+
+adminManageUsers?.addEventListener("click", () => {
+  void openUserManagement();
 });
 
 adminOpenDataEntry?.addEventListener("click", () => {
@@ -1133,6 +1443,94 @@ showDashboard?.addEventListener("click", () => {
 
 refreshDashboard?.addEventListener("click", () => {
   void refreshUserDashboard();
+});
+
+managedUserSelect?.addEventListener("change", () => {
+  populateManagedUserForm(managedUserSelect.value);
+  if (userManagementOutput) {
+    userManagementOutput.hidden = true;
+    userManagementOutput.textContent = "";
+  }
+});
+
+refreshManagedUsers?.addEventListener("click", () => {
+  void refreshManagedUserList().catch((error: unknown) => {
+    showUserManagementOutput(error instanceof Error ? error.message : String(error));
+  });
+});
+
+userManagementForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void (async () => {
+    if (!hasAdminAccess()) {
+      showUserManagementOutput("Only admin users can manage user accounts.");
+      return;
+    }
+    const userId = managedUserSelect?.value ?? "";
+    if (!userId) {
+      showUserManagementOutput("Select a user before saving changes.");
+      return;
+    }
+    const submitButton = userManagementForm.querySelector<HTMLButtonElement>('button[type="submit"]');
+    submitButton?.setAttribute("disabled", "true");
+    showUserManagementOutput("Saving user changes...");
+    try {
+      const data = readManagedUserData(userManagementForm);
+      const validationError = validateManagedUserData(data);
+      if (validationError) {
+        showUserManagementOutput(validationError);
+        return;
+      }
+      const user = await updateManagedUser(userId, data);
+      if (currentUser?.userId === user.userId) {
+        currentUser = user;
+        updateAccessControls();
+      }
+      await refreshManagedUserList(user.userId);
+      showUserManagementOutput(
+        [
+          "User updated successfully",
+          `User ID: ${user.userId}`,
+          `Name: ${user.name}`,
+          `Email: ${user.email}`,
+          `Role: ${roleLabel(user.role)}`,
+          `Partner site: ${user.partnerSite}`,
+          `Site assigned: ${user.siteAssigned}`
+        ].join("\n")
+      );
+    } catch (error) {
+      showUserManagementOutput(error instanceof Error ? error.message : String(error));
+    } finally {
+      submitButton?.removeAttribute("disabled");
+    }
+  })();
+});
+
+passwordChangeForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  if (!currentUser) {
+    showProfileOutput("Login before changing your password.");
+    return;
+  }
+  const data = readPasswordChangeData(passwordChangeForm);
+  const validationMessage = validatePasswordChangeData(data);
+  if (validationMessage) {
+    showProfileOutput(validationMessage);
+    return;
+  }
+  void changeCurrentUserPassword({
+    currentPassword: data.currentPassword,
+    newPassword: data.newPassword
+  })
+    .then((user) => {
+      currentUser = user;
+      renderProfileDetails();
+      passwordChangeForm.reset();
+      showProfileOutput("Password changed successfully.");
+    })
+    .catch((error: unknown) => {
+      showProfileOutput(error instanceof Error ? error.message : String(error));
+    });
 });
 
 loginForm?.addEventListener("submit", (event) => {

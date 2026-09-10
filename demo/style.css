@@ -487,6 +487,35 @@ who-va-2022-form [data-testid="section-slider-item"] {
   grid-column: 1 / -1;
 }
 
+.profile-details {
+  display: grid;
+  grid-template-columns: minmax(120px, 180px) minmax(0, 1fr);
+  gap: 10px 16px;
+  margin: 0 0 20px;
+  padding: 14px;
+  background: #f8fafc;
+  border: 1px solid var(--who-2022-web-color-border);
+  border-radius: 8px;
+}
+
+.profile-details dt,
+.profile-details dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 0.9rem;
+}
+
+.profile-details dt {
+  color: var(--who-2022-web-color-muted);
+  font-weight: 800;
+}
+
+.profile-details dd {
+  color: var(--who-2022-web-color-ink);
+  font-weight: 650;
+}
+
 .entry-form label {
   display: grid;
   gap: 6px;

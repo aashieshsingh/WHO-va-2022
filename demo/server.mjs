@@ -556,6 +556,29 @@ async function requireAdminRequester(request, url) {
   }
 }
 
+async function requireAdminUser(auth) {
+  const requester = await loadAuthenticatedUser(auth);
+  if (requester.role !== "admin") {
+    const error = new Error("Only admin users can manage user accounts");
+    error.statusCode = 403;
+    throw error;
+  }
+  return requester;
+}
+
+function userResponseFromRow(saved) {
+  return {
+    userId: saved.user_id,
+    name: saved.name,
+    email: saved.email,
+    role: saved.role,
+    partnerSite: saved.partner_site,
+    siteAssigned: saved.site_assigned,
+    authKey: saved.auth_key,
+    createdAt: saved.created_at
+  };
+}
+
 async function registerUser(payload, request, url) {
   await ensureUsersTable();
   if (await hasRegisteredUsers()) await requireAdminRequester(request, url);
@@ -603,6 +626,89 @@ async function registerUser(payload, request, url) {
     throw error;
   }
 }
+
+function validateAdminUserUpdate(payload) {
+  const name = typeof payload.name === "string" ? payload.name.trim() : "";
+  const email = typeof payload.email === "string" ? payload.email.trim().toLowerCase() : "";
+  const role = typeof payload.role === "string" ? payload.role.trim() : "";
+  const partnerSite = typeof payload.partnerSite === "string" ? payload.partnerSite.trim() : "";
+  const siteAssigned = typeof payload.siteAssigned === "string" ? payload.siteAssigned.trim() : "";
+  const password = typeof payload.password === "string" ? payload.password : "";
+
+  if (!characterOnlyPattern.test(name))
+    throw badRequest("Name accepts letters only. Spaces are allowed between words.");
+  if (!emailPattern.test(email)) throw badRequest("A valid email is required");
+  if (!userRoles.has(role)) throw badRequest("Select a valid role");
+  if (!partnerSites.has(partnerSite)) throw badRequest("Select a valid partner site");
+  if (!assignedSites.has(siteAssigned)) throw badRequest("Select a valid assigned site");
+  if (password && (password.length < 8 || password.length > 128))
+    throw badRequest("Password must be between 8 and 128 characters");
+
+  return { name, email, role, partnerSite, siteAssigned, password };
+}
+
+async function listUsers(auth) {
+  await ensureUsersTable();
+  await requireAdminUser(auth);
+  const result = await pool.query(`
+    select user_id, name, email, role, partner_site, site_assigned, auth_key, created_at
+    from who_va_users
+    order by lower(name), lower(email)
+  `);
+  return result.rows.map(userResponseFromRow);
+}
+
+async function updateUserByAdmin(userId, payload, auth) {
+  await ensureUsersTable();
+  await requireAdminUser(auth);
+  const targetUserId = typeof userId === "string" ? userId.trim() : "";
+  if (!targetUserId) throw badRequest("User ID is required");
+  const user = validateAdminUserUpdate(payload);
+
+  const existingResult = await pool.query("select user_id, role from who_va_users where user_id = $1", [
+    targetUserId
+  ]);
+  const existing = existingResult.rows[0];
+  if (!existing) throw notFound("User not found");
+
+  if (existing.role === "admin" && user.role !== "admin") {
+    const adminCount = await pool.query("select count(*)::int as count from who_va_users where role = 'admin'");
+    if (Number(adminCount.rows[0]?.count ?? 0) <= 1) {
+      throw badRequest("At least one admin user is required");
+    }
+  }
+
+  try {
+    const result = await pool.query(
+      `
+        update who_va_users
+        set name = $1,
+            email = $2,
+            role = $3,
+            partner_site = $4,
+            site_assigned = $5,
+            password_hash = case when $6::text = '' then password_hash else $7 end,
+            updated_at = now()
+        where user_id = $8
+        returning user_id, name, email, role, partner_site, site_assigned, auth_key, created_at
+      `,
+      [
+        user.name,
+        user.email,
+        user.role,
+        user.partnerSite,
+        user.siteAssigned,
+        user.password,
+        user.password ? hashPassword(user.password) : "",
+        targetUserId
+      ]
+    );
+    return userResponseFromRow(result.rows[0]);
+  } catch (error) {
+    if (error?.code === "23505") throw badRequest("A user with this email is already registered");
+    throw error;
+  }
+}
 async function loginUser(payload, request) {
   await ensureUsersTable();
   const identifier = typeof payload.email === "string" ? payload.email.trim() : "";
@@ -635,6 +741,31 @@ async function loginUser(payload, request) {
     authKey: saved.auth_key,
     createdAt: saved.created_at
   };
+}
+
+async function changeUserPassword(payload, auth) {
+  await ensureUsersTable();
+  const requester = await loadAuthenticatedUser(auth);
+  const currentPassword = typeof payload.currentPassword === "string" ? payload.currentPassword : "";
+  const newPassword = typeof payload.newPassword === "string" ? payload.newPassword : "";
+  if (!currentPassword) throw badRequest("Current password is required");
+  if (newPassword.length < 8 || newPassword.length > 128) {
+    throw badRequest("New password must be between 8 and 128 characters");
+  }
+
+  const result = await pool.query("select password_hash from who_va_users where user_id = $1", [
+    requester.userId
+  ]);
+  const saved = result.rows[0];
+  if (!saved || !verifyPassword(currentPassword, saved.password_hash)) {
+    throw badRequest("Current password is incorrect");
+  }
+
+  await pool.query(
+    "update who_va_users set password_hash = $1, updated_at = now() where user_id = $2",
+    [hashPassword(newPassword), requester.userId]
+  );
+  return userFromUserId(requester.userId);
 }
 const characterOnlyCaseEntryFields = {
   district: "District",
@@ -940,6 +1071,18 @@ async function listMobileSyncEntries(auth) {
   }));
 }
 
+function isSelectedFlag(value) {
+  return value === "1" || value === 1 || value === true;
+}
+
+function dashboardFormType(whoVaData) {
+  if (!whoVaData || typeof whoVaData !== "object") return "Not set";
+  if (isSelectedFlag(whoVaData.isAdult) || whoVaData.age_group === "adult") return "Adult";
+  if (isSelectedFlag(whoVaData.isChild) || whoVaData.age_group === "child") return "Child";
+  if (isSelectedFlag(whoVaData.isNeonatal) || whoVaData.age_group === "neonate") return "Neonatal";
+  return "Not set";
+}
+
 async function listUserDashboard(auth) {
   await ensureDraftTable();
   const requester = await loadAuthenticatedUser(auth);
@@ -1003,7 +1146,8 @@ async function listUserDashboard(auth) {
       draftSection: row.draft_section,
       draftUpdatedAt: row.draft_updated_at,
       caseEntry: row.case_entry,
-      whoVaData: row.who_va_prefill
+      whoVaData: row.who_va_prefill,
+      formType: dashboardFormType(row.who_va_prefill)
     });
     usersById.set(ownerId, owner);
   }
@@ -1242,6 +1386,34 @@ const server = createHttpServer(async (request, response) => {
 
     if (url.pathname === "/api/users" && request.method === "POST") {
       const user = await registerUser(await readJsonBody(request), request, url);
+      sendJson(request, response, 200, { ok: true, user });
+      return;
+    }
+
+    if (url.pathname === "/api/users" && request.method === "GET") {
+      const auth = authFromRequest(request, url);
+      const users = await listUsers(auth);
+      sendJson(request, response, 200, { ok: true, users });
+      return;
+    }
+
+    if (url.pathname.startsWith("/api/users/") && request.method === "PATCH") {
+      const auth = authFromRequest(request, url);
+      const userId = decodeURIComponent(url.pathname.slice("/api/users/".length));
+      const user = await updateUserByAdmin(userId, await readJsonBody(request), auth);
+      sendJson(request, response, 200, { ok: true, user });
+      return;
+    }
+
+    if (url.pathname === "/api/profile" && request.method === "GET") {
+      const { user } = await requireAuthenticatedUser(request, url);
+      sendJson(request, response, 200, { ok: true, user });
+      return;
+    }
+
+    if (url.pathname === "/api/profile/password" && request.method === "POST") {
+      const auth = authFromRequest(request, url);
+      const user = await changeUserPassword(await readJsonBody(request), auth);
       sendJson(request, response, 200, { ok: true, user });
       return;
     }
