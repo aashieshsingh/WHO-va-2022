@@ -7,6 +7,13 @@ const REFRESH_TOKEN_KEY = "who_va_2022_auth_refresh_token";
 const USER_ID_KEY = "who_va_2022_auth_user_id";
 const USER_PROFILE_KEY = "who_va_2022_auth_user_profile";
 const API_BASE_URL_KEY = "who_va_2022_auth_api_base_url";
+const LEGACY_AUTH_KEYS = [
+  "who-va-2022:auth:access-token",
+  "who-va-2022:auth:refresh-token",
+  "who-va-2022:auth:user-id",
+  "who-va-2022:auth:user-profile",
+  "who-va-2022:auth:api-base-url"
+];
 
 export interface AuthTokens {
   accessToken: string;
@@ -87,7 +94,8 @@ export async function clearSecureAuthValues(): Promise<void> {
     SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY),
     SecureStore.deleteItemAsync(USER_ID_KEY),
     SecureStore.deleteItemAsync(USER_PROFILE_KEY),
-    SecureStore.deleteItemAsync(API_BASE_URL_KEY)
+    SecureStore.deleteItemAsync(API_BASE_URL_KEY),
+    ...LEGACY_AUTH_KEYS.map((key) => SecureStore.deleteItemAsync(key))
   ]);
 }
 
@@ -142,7 +150,11 @@ async function refreshAuthSession(apiBaseUrl: string): Promise<StoredAuthSession
   return nextSession;
 }
 
-export async function fetchWithAuth(apiBaseUrl: string, path: string, init: RequestInit = {}): Promise<Response> {
+export async function fetchWithAuth(
+  apiBaseUrl: string,
+  path: string,
+  init: RequestInit = {}
+): Promise<Response> {
   const session = await loadAuthSession();
   if (!session?.accessToken) throw new SessionExpiredError();
   const url = `${normalizeApiBaseUrl(apiBaseUrl).replace(/\/$/u, "")}${path}`;

@@ -9,15 +9,16 @@
   </head>
   <body>
     <header class="demo-header">
-      <div>
+      <div class="demo-brand">
         <h1>WHO 2022 Verbal Autopsy</h1>
+        <p>Secure verbal autopsy data entry</p>
       </div>
-      <div class="header-actions">
-        <button id="show-login" type="button">Login</button>
-        <button id="show-registration" type="button">Register user</button>
-        <button id="show-dashboard" type="button" hidden>Dashboard</button>
-        <button id="show-profile" type="button" hidden>Profile</button>
-        <button id="new-case-entry" type="button">Case data entry</button>
+      <nav class="menu-bar" aria-label="Main menu">
+        <button id="show-login" type="button" data-menu-step="login">Login</button>
+        <button id="show-registration" type="button" data-menu-step="registration">Register user</button>
+        <button id="show-dashboard" type="button" data-menu-step="dashboard" hidden>Dashboard</button>
+        <button id="show-profile" type="button" data-menu-step="profile" hidden>Profile</button>
+        <button id="new-case-entry" type="button" data-menu-step="entry">Case data entry</button>
         <button id="logout-user" type="button" hidden>Logout</button>
         <button id="header-start-selected-entry" class="start-selected-entry" type="button" disabled>
           Fill WHO VA 2022 Instrument
@@ -26,7 +27,7 @@
           <span class="sr-only">Language</span>
           <select id="language" aria-label="Instrument language"></select>
         </label>
-      </div>
+      </nav>
     </header>
 
     <main>
@@ -466,7 +467,12 @@
           <button id="edit-case-entry" type="button">Edit case entry</button>
         </div>
         <output id="who-va-output" class="entry-output" hidden></output>
-        <who-va-2022-form id="who-va-form" locale="hi"></who-va-2022-form>
+        <who-va-2022-form
+          id="who-va-form"
+          locale="hi"
+          auto-save-draft-on-change
+          auto-save-draft-interval-ms="5000"
+        ></who-va-2022-form>
       </section>
     </main>
 

@@ -214,6 +214,7 @@ const adminOpenDashboard = document.querySelector<HTMLButtonElement>("#admin-ope
 const showDashboard = document.querySelector<HTMLButtonElement>("#show-dashboard");
 const showProfile = document.querySelector<HTMLButtonElement>("#show-profile");
 const logoutUser = document.querySelector<HTMLButtonElement>("#logout-user");
+const menuButtons = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-menu-step]"));
 const userManagementShell = document.querySelector<HTMLElement>("#user-management-shell");
 const userManagementForm = document.querySelector<HTMLFormElement>("#user-management-form");
 const managedUserSelect = document.querySelector<HTMLSelectElement>("#managed-user-select");
@@ -320,6 +321,12 @@ const setVisibleStep = (
   if (casePickerShell) casePickerShell.hidden = step !== "picker";
   if (entryShell) entryShell.hidden = step !== "entry";
   if (whoVaShell) whoVaShell.hidden = step !== "instrument";
+  for (const button of menuButtons) {
+    const isActive = button.dataset.menuStep === step;
+    button.classList.toggle("menu-button--active", isActive);
+    if (isActive) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
+  }
 };
 
 const hasDataEntryAccess = () => currentUser?.role === "admin" || currentUser?.role === "data-entry";
@@ -798,9 +805,7 @@ const populateManagedUserForm = (userId: string) => {
   if (!userManagementForm || !user) return;
   const setValue = (name: string, value: string) => {
     const control = userManagementForm.elements.namedItem(name) as
-      | HTMLInputElement
-      | HTMLSelectElement
-      | null;
+      HTMLInputElement | HTMLSelectElement | null;
     if (control) control.value = value;
   };
   setValue("name", user.name);
@@ -865,7 +870,9 @@ const openUserManagement = async () => {
   }
 };
 
-const readPasswordChangeData = (sourceForm: HTMLFormElement): ChangePasswordPayload & {
+const readPasswordChangeData = (
+  sourceForm: HTMLFormElement
+): ChangePasswordPayload & {
   confirmPassword: string;
 } => {
   const formData = new FormData(sourceForm);
@@ -1731,3 +1738,4 @@ form?.addEventListener("who-va-complete", (event) => {
 
 setDefaultEntryValues();
 setVisibleStep("login");
+updateAccessControls();

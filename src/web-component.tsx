@@ -15,7 +15,13 @@ import { WhoVaForm } from "./web.js";
 
 export class WhoVaFormElement extends HTMLElement {
   static get observedAttributes() {
-    return ["draft-id", "locale", "show-guidance"];
+    return [
+      "auto-save-draft-interval-ms",
+      "auto-save-draft-on-change",
+      "draft-id",
+      "locale",
+      "show-guidance"
+    ];
   }
 
   private root: Root | undefined;
@@ -78,6 +84,14 @@ export class WhoVaFormElement extends HTMLElement {
     return this.getAttribute("draft-id") ?? this.generatedDraftId;
   }
 
+  private getAutoSaveDraftIntervalMs(): number | false | undefined {
+    const value = this.getAttribute("auto-save-draft-interval-ms");
+    if (value == null || value.trim() === "") return undefined;
+    if (value === "false" || value === "off") return false;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+  }
+
   /**
    * Host-provided durable storage. Assign this property before connecting the
    * element to enable draft persistence.
@@ -110,6 +124,7 @@ export class WhoVaFormElement extends HTMLElement {
     if (!this.isConnected || renderVersion !== this.renderVersion) return;
     this.session.setInstrument(language.instrument);
     this.session.setLocale(language.locale, language.uiTranslations);
+    const autoSaveDraftIntervalMs = this.getAutoSaveDraftIntervalMs();
     this.root ??= createRoot(this);
     this.root.render(
       <WhoVaForm
@@ -123,6 +138,8 @@ export class WhoVaFormElement extends HTMLElement {
         locale={language.locale}
         uiTranslations={language.uiTranslations}
         showSourceGuidance={this.hasAttribute("show-guidance")}
+        autoSaveDraftOnChange={this.hasAttribute("auto-save-draft-on-change")}
+        {...(autoSaveDraftIntervalMs !== undefined ? { autoSaveDraftIntervalMs } : {})}
         onChange={(data) =>
           this.dispatchEvent(new CustomEvent("who-va-change", { detail: data, bubbles: true }))
         }

@@ -12,6 +12,7 @@ import { runMigrations } from "./migrate.mjs";
 
 const PORT = Number(process.env.PORT ?? 5173);
 const HOST = process.env.HOST ?? "0.0.0.0";
+const HMR_PORT = Number(process.env.VITE_HMR_PORT ?? process.env.HMR_PORT ?? PORT + 1);
 const pool = createPostgresPool();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const attachmentStorageRoot = path.resolve(
@@ -1296,7 +1297,10 @@ await runMigrations(pool);
 
 const vite = await createViteServer({
   root: "demo",
-  server: { middlewareMode: true },
+  server: {
+    hmr: { port: HMR_PORT },
+    middlewareMode: true
+  },
   appType: "spa"
 });
 

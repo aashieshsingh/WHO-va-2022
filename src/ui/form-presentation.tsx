@@ -209,12 +209,14 @@ export const formStyles = {
   ),
   error: withWebTheme({ color: "#a23a2a", marginTop: 8, fontSize: 13 }, { color: "danger" }),
   navigation: {
+    columnGap: 10,
     flexDirection: "row" as const,
-    flexWrap: "nowrap" as const,
+    flexWrap: "wrap" as const,
     alignItems: "center" as const,
     justifyContent: "center" as const,
     marginTop: 12,
-    marginBottom: 12
+    marginBottom: 12,
+    rowGap: 10
   },
   navButton: { minHeight: 40, minWidth: 68, paddingHorizontal: 12, paddingVertical: 10 },
   navIconButton: {

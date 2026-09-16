@@ -683,7 +683,11 @@ export function createWhoVaForm(
               styles.navButton,
               !snapshot.canGoBack && questionControlStyles.buttonDisabled
             ]}
-            onPress={() => session.previous()}
+            onPress={() => {
+              void saveDraft().then(() => {
+                session.previous();
+              });
+            }}
           >
             <Text style={questionControlStyles.buttonTextSecondary}>{messages.back}</Text>
           </Pressable>
