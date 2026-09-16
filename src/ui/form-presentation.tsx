@@ -136,11 +136,20 @@ export const formStyles = {
       justifyContent: "center" as const,
       minHeight: 38,
       minWidth: 112,
+      position: "relative" as const,
       width: 112,
       paddingHorizontal: 12,
       paddingVertical: 8
     },
     { backgroundColor: "surface", borderColor: "border" }
+  ),
+  sectionButtonStarted: withWebTheme(
+    { backgroundColor: "#f5fbf8", borderColor: "#8fbfaf" },
+    { backgroundColor: "brandSoft", borderColor: "brand" }
+  ),
+  sectionButtonComplete: withWebTheme(
+    { backgroundColor: "#edf7f2", borderColor: "#147d64" },
+    { backgroundColor: "brandSoft", borderColor: "brand" }
   ),
   sectionSliderButton: withWebTheme(
     {
@@ -180,6 +189,25 @@ export const formStyles = {
   sectionSliderButtonTextDisabled: withWebTheme({ color: "#8ca099" }, { color: "muted" }),
   sectionButtonTextActive: { color: "#ffffff" },
   sectionButtonTextError: withWebTheme({ color: "#8c3022" }, { color: "dangerStrong" }),
+  sectionStatusBadge: withWebTheme(
+    {
+      alignItems: "center" as const,
+      backgroundColor: "#147d64",
+      borderRadius: 999,
+      height: 18,
+      justifyContent: "center" as const,
+      position: "absolute" as const,
+      right: 5,
+      top: 4,
+      width: 18
+    },
+    { backgroundColor: "brand" }
+  ),
+  sectionStatusBadgeStarted: withWebTheme({ backgroundColor: "#dbe9e4" }, { backgroundColor: "border" }),
+  sectionStatusBadgeActive: { backgroundColor: "#ffffff" },
+  sectionStatusBadgeText: { color: "#ffffff", fontSize: 12, fontWeight: "700" as const, lineHeight: 14 },
+  sectionStatusBadgeTextStarted: withWebTheme({ color: "#315e52" }, { color: "inkSubtle" }),
+  sectionStatusBadgeTextActive: withWebTheme({ color: "#12372d" }, { color: "brandDeep" }),
   sectionTitle: withWebTheme(
     { color: "#12372d", fontSize: 24, fontWeight: "700" as const, marginBottom: 18 },
     { color: "brandDeep" }

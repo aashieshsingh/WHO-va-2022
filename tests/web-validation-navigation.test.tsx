@@ -318,10 +318,56 @@ describe("validation navigation", () => {
     expect(container.textContent).toContain("Identity");
     expect(container.querySelector('[data-testid="question-required_name"]')).not.toBeNull();
     expect(
-      Array.from(container.querySelectorAll<HTMLElement>('[role="button"]')).find(
-        (button) => button.textContent === "1. Identity"
-      )?.getAttribute("aria-invalid")
+      Array.from(container.querySelectorAll<HTMLElement>('[role="button"]'))
+        .find((button) => button.textContent === "1. Identity")
+        ?.getAttribute("aria-invalid")
     ).toBe("true");
+
+    root.unmount();
+  });
+
+  it("marks sections completed after their required answers are filled", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<WhoVaForm instrument={crossSectionInstrument} />);
+    });
+
+    expect(container.querySelector('[data-testid="section-status-identity"]')).toBeNull();
+
+    const nameInput = container.querySelector<HTMLInputElement>('[data-testid="question-required_name"]');
+    const setNativeValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    await act(async () => {
+      setNativeValue?.call(nameInput, "Completed name");
+      nameInput?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-testid="section-status-identity"]')?.textContent).toBe("✓")
+    );
+    expect(
+      Array.from(container.querySelectorAll<HTMLElement>('[role="button"]'))
+        .find((button) => button.getAttribute("aria-label")?.includes("Identity"))
+        ?.getAttribute("aria-label")
+    ).toContain("completed");
+
+    const details = Array.from(container.querySelectorAll<HTMLElement>('[role="button"]')).find(
+      (button) => button.textContent === "2. Details"
+    );
+    await act(async () => {
+      details?.click();
+    });
+
+    const detailInput = container.querySelector<HTMLInputElement>('[data-testid="question-case_detail"]');
+    await act(async () => {
+      setNativeValue?.call(detailInput, "Completed detail");
+      detailInput?.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-testid="section-status-details"]')?.textContent).toBe("✓")
+    );
 
     root.unmount();
   });

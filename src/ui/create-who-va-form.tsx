@@ -8,6 +8,7 @@ import type {
   AnswerValue,
   InstrumentDefinition,
   InstrumentQuestion,
+  InstrumentSection,
   SessionSnapshot,
   SubmissionData,
   SubmissionValidationResult,
@@ -17,8 +18,13 @@ import type {
   WhoVaSession
 } from "../types.js";
 import { WHO_VA_DRAFT_SCHEMA_VERSION, createDraftId, decodeWhoVaDraft } from "../draft.js";
+import { getInstrumentRuntimeIndex } from "../engine/instrument-index.js";
 import { createWhoVaSession } from "../engine/session.js";
-import { applyCalculations, isQuestionRelevantWithCalculatedData } from "../engine/validation.js";
+import {
+  applyCalculations,
+  isQuestionRelevantWithCalculatedData,
+  validateAnswer
+} from "../engine/validation.js";
 import { localeFromLanguageName, resolveUiMessages, type WhoVaUiTranslations } from "../i18n.js";
 import { WHO_VA_FORM_VERSION } from "../version.js";
 import {
@@ -87,6 +93,79 @@ export interface WhoVaPrimitiveSet {
 }
 
 type FormView = "form" | "preview";
+type SectionProgressStatus = "empty" | "started" | "complete";
+
+function isAnswerableQuestion(question: InstrumentQuestion): boolean {
+  return !["calculated", "note", "system"].includes(question.control);
+}
+
+function sectionStatus({
+  draftIssues,
+  instrument,
+  locale,
+  messages,
+  section,
+  snapshot
+}: {
+  draftIssues: Record<string, ValidationIssue>;
+  instrument: InstrumentDefinition;
+  locale: string;
+  messages: ReturnType<typeof resolveUiMessages>;
+  section: InstrumentSection;
+  snapshot: SessionSnapshot;
+}): SectionProgressStatus {
+  const runtimeIndex = getInstrumentRuntimeIndex(instrument);
+  const calculated = applyCalculations(instrument, snapshot.data);
+  const questions = (runtimeIndex.questionsBySection.get(section.name) ?? []).filter(
+    (question) =>
+      isAnswerableQuestion(question) && isQuestionRelevantWithCalculatedData(instrument, question, calculated)
+  );
+  if (!questions.length) return "empty";
+
+  const answered = questions.filter((question) => hasAnswer(snapshot.data[question.name]));
+  if (!answered.length) return "empty";
+
+  const issueQuestionNames = new Set([
+    ...snapshot.issues.map((issue) => issue.question),
+    ...Object.values(draftIssues).map((issue) => issue.question)
+  ]);
+  const hasKnownIssue = questions.some((question) => issueQuestionNames.has(question.name));
+  const hasValidationIssue = questions.some((question) =>
+    validateAnswer(
+      question,
+      snapshot.data[question.name],
+      calculated,
+      locale,
+      messages,
+      runtimeIndex.choiceValuesByQuestionName.get(question.name)
+    ).some((issue) => issue.code !== "required" || hasAnswer(snapshot.data[issue.question]))
+  );
+  const requiredQuestions = questions.filter((question) => question.required);
+  const requiredComplete = requiredQuestions.every((question) => hasAnswer(snapshot.data[question.name]));
+
+  return requiredComplete && !hasKnownIssue && !hasValidationIssue ? "complete" : "started";
+}
+
+function sectionStatuses({
+  draftIssues,
+  instrument,
+  locale,
+  messages,
+  snapshot
+}: {
+  draftIssues: Record<string, ValidationIssue>;
+  instrument: InstrumentDefinition;
+  locale: string;
+  messages: ReturnType<typeof resolveUiMessages>;
+  snapshot: SessionSnapshot;
+}): ReadonlyMap<string, SectionProgressStatus> {
+  return new Map(
+    snapshot.visibleSections.map((section) => [
+      section.name,
+      sectionStatus({ draftIssues, instrument, locale, messages, section, snapshot })
+    ])
+  );
+}
 
 export interface WhoVaNavigationState {
   instrumentId: string;
@@ -143,12 +222,14 @@ export function createWhoVaForm(
     issueSectionNames,
     locale,
     messages,
+    sectionProgress,
     snapshot,
     switchSection
   }: {
     issueSectionNames: ReadonlySet<string>;
     locale: string;
     messages: ReturnType<typeof resolveUiMessages>;
+    sectionProgress: ReadonlyMap<string, SectionProgressStatus>;
     snapshot: SessionSnapshot;
     switchSection: (sectionName: string) => void;
   }) {
@@ -192,8 +273,13 @@ export function createWhoVaForm(
           {snapshot.visibleSections.map((section, index) => {
             const isActive = section.name === snapshot.currentSection.name;
             const hasSectionIssues = issueSectionNames.has(section.name);
+            const progress = sectionProgress.get(section.name) ?? "empty";
+            const isComplete = progress === "complete";
+            const isStarted = progress === "started";
+            const sectionLabel = `${index + 1}. ${localized(section.label, locale, section.name)}`;
             return (
               <Pressable
+                accessibilityLabel={`${sectionLabel}${isComplete ? ", completed" : isStarted ? ", started" : ""}`}
                 accessibilityRole="button"
                 accessibilityState={{ selected: isActive }}
                 testID="section-slider-item"
@@ -202,10 +288,33 @@ export function createWhoVaForm(
                 onPress={() => switchSection(section.name)}
                 style={[
                   styles.sectionButton,
+                  isStarted && !hasSectionIssues && styles.sectionButtonStarted,
+                  isComplete && !hasSectionIssues && styles.sectionButtonComplete,
                   hasSectionIssues && !isActive && styles.sectionButtonError,
                   isActive && styles.sectionButtonActive
                 ]}
               >
+                {isComplete || isStarted ? (
+                  <View
+                    aria-hidden="true"
+                    style={[
+                      styles.sectionStatusBadge,
+                      isStarted && styles.sectionStatusBadgeStarted,
+                      isActive && styles.sectionStatusBadgeActive
+                    ]}
+                    testID={`section-status-${section.name}`}
+                  >
+                    <Text
+                      style={[
+                        styles.sectionStatusBadgeText,
+                        isStarted && styles.sectionStatusBadgeTextStarted,
+                        isActive && styles.sectionStatusBadgeTextActive
+                      ]}
+                    >
+                      {isComplete ? "✓" : "•"}
+                    </Text>
+                  </View>
+                ) : null}
                 <Text
                   numberOfLines={2}
                   style={[
@@ -214,7 +323,7 @@ export function createWhoVaForm(
                     isActive && styles.sectionButtonTextActive
                   ]}
                 >
-                  {index + 1}. {localized(section.label, locale, section.name)}
+                  {sectionLabel}
                 </Text>
               </Pressable>
             );
@@ -250,7 +359,10 @@ export function createWhoVaForm(
     const { draftStore, onChange, onDraftController, onDraftError, onDraftSaved, onReady } = props;
     const instrument = props.resolvedInstrument;
     const locale = props.locale ?? localeFromLanguageName(instrument.defaultLanguage) ?? "en";
-    const messages = resolveUiMessages(locale, props.uiTranslations);
+    const messages = useMemo(
+      () => resolveUiMessages(locale, props.uiTranslations),
+      [locale, props.uiTranslations]
+    );
     const saveDraftIcon = svgPrimitives ? (
       <FooterIcon name="save" primitives={svgPrimitives} />
     ) : (
@@ -605,6 +717,10 @@ export function createWhoVaForm(
       Object.values(draftIssues).forEach(collect);
       return names;
     }, [draftIssues, instrument.questions, snapshot.issues, snapshot.visibleSections]);
+    const sectionProgress = useMemo(
+      () => sectionStatuses({ draftIssues, instrument, locale, messages, snapshot }),
+      [draftIssues, instrument, locale, messages, snapshot]
+    );
 
     if (view === "preview") {
       return (
@@ -666,6 +782,7 @@ export function createWhoVaForm(
           issueSectionNames={issueSectionNames}
           locale={locale}
           messages={messages}
+          sectionProgress={sectionProgress}
           snapshot={snapshot}
           switchSection={switchSection}
         />
