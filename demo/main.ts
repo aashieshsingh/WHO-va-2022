@@ -399,20 +399,20 @@ const mergeStoredCaseEntries = (primary: StoredCaseEntry[], secondary: StoredCas
 };
 
 const normalizeSavedCaseEntries = (entries: SavedCaseEntry[]): StoredCaseEntry[] =>
-  entries
-    .map((entry) => {
-      const caseEntry = entry.caseEntry ?? entry.case_entry;
-      return {
+  entries.flatMap((entry) => {
+    const caseEntry = entry.caseEntry ?? entry.case_entry;
+    const updatedAt = entry.updatedAt ?? entry.updated_at;
+    if (!entry.uid || !caseEntry?.deceasedFullName || !updatedAt) return [];
+    return [
+      {
         uid: entry.uid,
         userId: entry.userId,
-        caseEntry: caseEntry ? normalizeCaseEntry(caseEntry) : undefined,
+        caseEntry: normalizeCaseEntry(caseEntry),
         whoVaData: entry.whoVaData ?? entry.who_va_prefill ?? {},
-        updatedAt: entry.updatedAt ?? entry.updated_at
-      };
-    })
-    .filter((entry): entry is StoredCaseEntry =>
-      Boolean(entry.uid && entry.caseEntry?.deceasedFullName && entry.updatedAt)
-    );
+        updatedAt
+      }
+    ];
+  });
 
 const cacheSyncedCaseEntries = (entries: SavedCaseEntry[]) => {
   const syncedEntries = normalizeSavedCaseEntries(entries);

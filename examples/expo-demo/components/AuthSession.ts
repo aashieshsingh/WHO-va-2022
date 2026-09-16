@@ -2,11 +2,11 @@ import * as SecureStore from "expo-secure-store";
 
 import type { RegisteredUser } from "./LocalDatabase";
 
-const ACCESS_TOKEN_KEY = "who-va-2022:auth:access-token";
-const REFRESH_TOKEN_KEY = "who-va-2022:auth:refresh-token";
-const USER_ID_KEY = "who-va-2022:auth:user-id";
-const USER_PROFILE_KEY = "who-va-2022:auth:user-profile";
-const API_BASE_URL_KEY = "who-va-2022:auth:api-base-url";
+const ACCESS_TOKEN_KEY = "who_va_2022_auth_access_token";
+const REFRESH_TOKEN_KEY = "who_va_2022_auth_refresh_token";
+const USER_ID_KEY = "who_va_2022_auth_user_id";
+const USER_PROFILE_KEY = "who_va_2022_auth_user_profile";
+const API_BASE_URL_KEY = "who_va_2022_auth_api_base_url";
 
 export interface AuthTokens {
   accessToken: string;

@@ -14,6 +14,7 @@ export default function HomeRoute() {
     defaultApiBaseUrl,
     drafts,
     isDatabaseReady,
+    lastUpdate,
     latestDraft,
     login,
     logout,
@@ -21,6 +22,7 @@ export default function HomeRoute() {
   } = useDemoState();
   const [apiBaseUrl, setApiBaseUrl] = useState("");
   const [email, setEmail] = useState("");
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [password, setPassword] = useState("");
   const [loginMessage, setLoginMessage] = useState("");
 
@@ -53,13 +55,27 @@ export default function HomeRoute() {
             />
             <Text style={styles.fieldLabel}>Password</Text>
             <TextInput onChangeText={setPassword} secureTextEntry style={styles.textInput} value={password} />
+            <View style={styles.progressTrack}>
+              <View
+                style={[
+                  styles.progressFill,
+                  { width: isLoggingIn ? "75%" : isDatabaseReady ? "100%" : "35%" }
+                ]}
+              />
+            </View>
+            {!isDatabaseReady ? <Text style={styles.invalidText}>{lastUpdate}</Text> : null}
             {loginMessage ? <Text style={styles.invalidText}>{loginMessage}</Text> : null}
             <View style={styles.actionStack}>
               <ActionButton
-                disabled={!isDatabaseReady}
-                label="Login"
+                disabled={isLoggingIn}
+                label={isLoggingIn ? "Logging in..." : "Login"}
                 onPress={() => {
                   setLoginMessage("");
+                  if (!isDatabaseReady) {
+                    setLoginMessage(lastUpdate || "Local database is still opening. Try again shortly.");
+                    return;
+                  }
+                  setIsLoggingIn(true);
                   void login({ email, password }, apiBaseUrl)
                     .then(() => {
                       setEmail("");
@@ -67,6 +83,9 @@ export default function HomeRoute() {
                     })
                     .catch((error: unknown) => {
                       setLoginMessage((error as Error).message);
+                    })
+                    .finally(() => {
+                      setIsLoggingIn(false);
                     });
                 }}
               />

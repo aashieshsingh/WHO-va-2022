@@ -221,6 +221,19 @@ export const styles = StyleSheet.create({
     fontWeight: "700",
     marginTop: 6
   },
+  progressFill: {
+    backgroundColor: "#008a6a",
+    borderRadius: 999,
+    height: "100%"
+  },
+  progressTrack: {
+    backgroundColor: "#dbe7e3",
+    borderRadius: 999,
+    height: 8,
+    marginTop: 14,
+    overflow: "hidden",
+    width: "100%"
+  },
   listItem: {
     alignItems: "center",
     backgroundColor: "#ffffff",
