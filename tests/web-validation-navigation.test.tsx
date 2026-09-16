@@ -326,7 +326,7 @@ describe("validation navigation", () => {
     root.unmount();
   });
 
-  it("marks sections completed after their required answers are filled", async () => {
+  it("marks sections and questions completed after their required answers are filled", async () => {
     const container = document.createElement("div");
     document.body.append(container);
     const root = createRoot(container);
@@ -335,6 +335,7 @@ describe("validation navigation", () => {
     });
 
     expect(container.querySelector('[data-testid="section-status-identity"]')).toBeNull();
+    expect(container.querySelector('[data-testid="question-status-required_name"]')).toBeNull();
 
     const nameInput = container.querySelector<HTMLInputElement>('[data-testid="question-required_name"]');
     const setNativeValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
@@ -346,6 +347,7 @@ describe("validation navigation", () => {
     await vi.waitFor(() =>
       expect(container.querySelector('[data-testid="section-status-identity"]')?.textContent).toBe("✓")
     );
+    expect(container.querySelector('[data-testid="question-status-required_name"]')?.textContent).toBe("✓");
     expect(
       Array.from(container.querySelectorAll<HTMLElement>('[role="button"]'))
         .find((button) => button.getAttribute("aria-label")?.includes("Identity"))
@@ -368,6 +370,7 @@ describe("validation navigation", () => {
     await vi.waitFor(() =>
       expect(container.querySelector('[data-testid="section-status-details"]')?.textContent).toBe("✓")
     );
+    expect(container.querySelector('[data-testid="question-status-case_detail"]')?.textContent).toBe("✓");
 
     root.unmount();
   });

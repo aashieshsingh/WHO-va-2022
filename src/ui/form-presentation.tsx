@@ -224,10 +224,30 @@ export const formStyles = {
     { backgroundColor: "surface", borderRadius: "cardRadius", borderColor: "border" }
   ),
   questionError: withWebTheme({ borderColor: "#d66552" }, { borderColor: "dangerBorder" }),
+  questionHeader: {
+    alignItems: "flex-start" as const,
+    columnGap: 8,
+    flexDirection: "row" as const,
+    justifyContent: "space-between" as const
+  },
   label: withWebTheme(
     { color: "#142a24", fontSize: 16, fontWeight: "600" as const, marginBottom: 8 },
     { color: "ink" }
   ),
+  labelWithStatus: { flex: 1 },
+  questionStatusBadge: withWebTheme(
+    {
+      alignItems: "center" as const,
+      backgroundColor: "#147d64",
+      borderRadius: 999,
+      height: 22,
+      justifyContent: "center" as const,
+      marginTop: -1,
+      width: 22
+    },
+    { backgroundColor: "brand" }
+  ),
+  questionStatusBadgeText: { color: "#ffffff", fontSize: 14, fontWeight: "700" as const, lineHeight: 16 },
   required: withWebTheme({ color: "#a23a2a" }, { color: "danger" }),
   hint: withWebTheme({ color: "#536b64", fontSize: 13, marginBottom: 10 }, { color: "muted" }),
   guidance: withWebTheme({ color: "#315e73", fontSize: 13, marginBottom: 10 }, { color: "guidance" }),

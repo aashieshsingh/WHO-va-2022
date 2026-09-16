@@ -617,6 +617,7 @@ export function createWhoVaForm(
         snapshot.data
       );
       const hasIssues = issues.length > 0;
+      const isQuestionComplete = isAnswerableQuestion(question) && hasAnswer(value) && !hasIssues;
 
       const control = (
         <questionControls.Control
@@ -649,12 +650,23 @@ export function createWhoVaForm(
           ]}
           testID={`question-card-${question.name}`}
         >
-          <Text style={styles.label}>
-            {label}
-            {question.required && question.control !== "note" ? (
-              <Text style={styles.required}> *</Text>
+          <View style={styles.questionHeader}>
+            <Text style={[styles.label, isQuestionComplete && styles.labelWithStatus]}>
+              {label}
+              {question.required && question.control !== "note" ? (
+                <Text style={styles.required}> *</Text>
+              ) : null}
+            </Text>
+            {isQuestionComplete ? (
+              <View
+                accessibilityLabel="Answered"
+                style={styles.questionStatusBadge}
+                testID={`question-status-${question.name}`}
+              >
+                <Text style={styles.questionStatusBadgeText}>✓</Text>
+              </View>
             ) : null}
-          </Text>
+          </View>
           {hint ? <Text style={styles.hint}>{hint}</Text> : null}
           {props.showSourceGuidance && guidance ? <Text style={styles.guidance}>{guidance}</Text> : null}
           {control}
