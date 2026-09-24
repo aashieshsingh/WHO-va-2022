@@ -1,9 +1,9 @@
-import { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
 import { Picker } from "@react-native-picker/picker";
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { Pressable, Text, TextInput, View } from "react-native";
+import { Text, TextInput, View } from "react-native";
 
+import { CaseDateField } from "../components/CaseDateField";
 import { ActionButton, DemoChrome, ScreenHeader, ScreenScroll, styles } from "../components/DemoLayout";
 import { emptyCaseEntry, type CaseEntryData, useDemoState } from "../components/DemoState";
 import { validateCaseEntryData } from "../components/LocalDatabase";
@@ -23,19 +23,6 @@ const textFields: Array<[CaseEntryField, string, "default" | "numeric"]> = [
   ["pinCode", "PIN code", "numeric"]
 ];
 
-function dateFromIso(value: string): Date {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(value);
-  if (!match) return new Date();
-  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-}
-
-function isoFromDate(value: Date): string {
-  const year = value.getFullYear();
-  const month = String(value.getMonth() + 1).padStart(2, "0");
-  const day = String(value.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
 export default function CaseEntryRoute() {
   const router = useRouter();
   const { currentUser, saveCase } = useDemoState();
@@ -46,16 +33,6 @@ export default function CaseEntryRoute() {
 
   const updateText = (field: CaseEntryField, value: string) => {
     setEntry((current) => ({ ...current, [field]: value }));
-  };
-  const pickDate = (field: "date" | "deathDate") => {
-    DateTimePickerAndroid.open({
-      mode: "date",
-      maximumDate: new Date(),
-      value: dateFromIso(entry[field]),
-      onValueChange: (_event, selectedDate) => {
-        if (selectedDate) updateText(field, isoFromDate(selectedDate));
-      }
-    });
   };
 
   if (!currentUser) {
@@ -91,19 +68,21 @@ export default function CaseEntryRoute() {
           {isAdmin ? (
             <>
               <Text style={styles.fieldLabel}>Entry date</Text>
-              <Pressable accessibilityRole="button" onPress={() => pickDate("date")} style={styles.textInput}>
-                <Text>{entry.date || "Select entry date"}</Text>
-              </Pressable>
+              <CaseDateField
+                accessibilityLabel="Entry date"
+                onChange={(date) => updateText("date", date)}
+                placeholder="Select entry date"
+                value={entry.date}
+              />
             </>
           ) : null}
           <Text style={styles.fieldLabel}>Death date</Text>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => pickDate("deathDate")}
-            style={styles.textInput}
-          >
-            <Text>{entry.deathDate || "Select death date"}</Text>
-          </Pressable>
+          <CaseDateField
+            accessibilityLabel="Death date"
+            onChange={(deathDate) => updateText("deathDate", deathDate)}
+            placeholder="Select death date"
+            value={entry.deathDate}
+          />
           <Text style={styles.fieldLabel}>Place of death</Text>
           <View style={styles.selectInput}>
             <Picker
