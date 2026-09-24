@@ -54,11 +54,11 @@ export interface CaseEntryData {
   date: string;
   householdHeadName: string;
   deceasedFullName: string;
-  deceasedSex: "female" | "male" | "undetermined";
+  deceasedSex: "" | "female" | "male" | "undetermined";
   deceasedHouseAddress: string;
   pinCode: string;
   deathDate: string;
-  deathPlace: "hospital-death" | "home-death" | "on-the-way-to-hospital" | "other";
+  deathPlace: "" | "hospital-death" | "home-death" | "on-the-way-to-hospital" | "other";
   ageAtDeath: number;
 }
 

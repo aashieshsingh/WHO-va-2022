@@ -91,6 +91,7 @@ export interface WhoVaQuestionControlPrimitives {
   View: React.ElementType;
   Text: React.ElementType;
   TextInput: React.ElementType;
+  SelectInput?: React.ElementType | undefined;
   DateInput?: React.ElementType | undefined;
   Pressable: React.ElementType;
   Image?: React.ElementType | undefined;
@@ -98,6 +99,7 @@ export interface WhoVaQuestionControlPrimitives {
 }
 
 const EMPTY_SELECTED_VALUES: readonly string[] = [];
+const DROPDOWN_SINGLE_CHOICE_QUESTIONS = new Set(["Id10019", "Id10058"]);
 
 export function incompleteDateIssue(
   question: InstrumentQuestion,
@@ -121,7 +123,7 @@ export function incompleteDateIssue(
 }
 
 export function createWhoVaQuestionControls(primitives: WhoVaQuestionControlPrimitives) {
-  const { View, Text: PrimitiveText, TextInput, DateInput, Pressable, Image } = primitives;
+  const { View, Text: PrimitiveText, TextInput, SelectInput, DateInput, Pressable, Image } = primitives;
 
   function Text({ question, value, locale, issues, onAnswer }: WhoVaQuestionControlProps) {
     const multiline = question.appearance === "multiline";
@@ -395,6 +397,35 @@ export function createWhoVaQuestionControls(primitives: WhoVaQuestionControlPrim
   function SingleChoice(props: WhoVaQuestionControlProps) {
     const { question, value, locale, issues, onAnswer } = props;
     if (question.name === "language") return <SearchableSingleChoice {...props} />;
+    if (SelectInput && DROPDOWN_SINGLE_CHOICE_QUESTIONS.has(question.name)) {
+      const hasIssues = issues.length > 0;
+      const readOnly = question.readOnly;
+      return (
+        <SelectInput
+          accessibilityLabel={questionLabel(question, locale)}
+          testID={`question-${question.name}`}
+          style={[
+            questionControlStyles.input,
+            hasIssues && questionControlStyles.inputError,
+            readOnly && questionControlStyles.inputReadOnly
+          ]}
+          aria-invalid={hasIssues || undefined}
+          aria-readonly={readOnly || undefined}
+          disabled={readOnly}
+          value={typeof value === "string" ? value : ""}
+          onChangeText={(next: string) => {
+            if (!readOnly) onAnswer(next || undefined);
+          }}
+        >
+          <option value="">Select</option>
+          {(question.choices ?? []).map((choice) => (
+            <option key={choice.value} value={choice.value}>
+              {localized(choice.label, locale, choice.value)}
+            </option>
+          ))}
+        </SelectInput>
+      );
+    }
     const hasIssues = issues.length > 0;
     const readOnly = question.readOnly;
     return (question.choices ?? []).map((choice) => {

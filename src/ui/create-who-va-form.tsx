@@ -79,6 +79,7 @@ export interface WhoVaPrimitiveSet {
   View: React.ElementType;
   Text: React.ElementType;
   TextInput: React.ElementType;
+  SelectInput?: React.ElementType;
   DateInput?: React.ElementType;
   Pressable: React.ElementType;
   ScrollView: React.ElementType;
@@ -212,6 +213,7 @@ export function createWhoVaForm(
     View,
     Text,
     TextInput: primitives.TextInput,
+    SelectInput: primitives.SelectInput,
     DateInput: primitives.DateInput,
     Pressable,
     Image: primitives.Image,

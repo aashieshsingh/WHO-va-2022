@@ -139,12 +139,12 @@ async function reachDeceasedScreen(page: Page): Promise<void> {
 async function fillDeceasedScreen(page: Page, scenario: AgeScenario): Promise<void> {
   await fill(page, "Id10017", "Deceased Person");
   await fill(page, "Id10018", "E2E-DECEASED-001");
-  await choose(page, "Id10019", "female");
+  await page.getByTestId("question-Id10019").selectOption("female");
   await choose(page, "Id10020", "yes");
   await fill(page, "Id10021", scenario.born);
   await choose(page, "Id10022", "yes");
   await fill(page, "Id10023_a", "2026-07-17");
-  await choose(page, "Id10058", "home");
+  await page.getByTestId("question-Id10058").selectOption("home");
   await choose(page, "Id10487", "no");
   await choose(page, "Id10051", "no");
   if (scenario.classification === "isAdult") await choose(page, "Id10059", "single");

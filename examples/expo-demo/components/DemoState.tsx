@@ -344,11 +344,11 @@ export function emptyCaseEntry(): CaseEntryData {
     date: new Date().toISOString().slice(0, 10),
     householdHeadName: "",
     deceasedFullName: "",
-    deceasedSex: "undetermined",
+    deceasedSex: "",
     deceasedHouseAddress: "",
     pinCode: "",
     deathDate: "",
-    deathPlace: "home-death",
+    deathPlace: "",
     ageAtDeath: 0
   };
 }
@@ -358,13 +358,13 @@ export function createWhoVaDataFromCaseEntry(entry: CaseEntryData): SubmissionDa
     entry.ageAtDeath >= 12
       ? {
           givenNames: entry.deceasedFullName,
-          sex: entry.deceasedSex,
+          ...(entry.deceasedSex ? { sex: entry.deceasedSex } : {}),
           ageInYears: entry.ageAtDeath,
           dateOfDeath: entry.deathDate
         }
       : {
           givenNames: entry.deceasedFullName,
-          sex: entry.deceasedSex,
+          ...(entry.deceasedSex ? { sex: entry.deceasedSex } : {}),
           dateOfDeath: entry.deathDate
         };
   const whoVaData = createWhoVaInitialDataFromPrefill({

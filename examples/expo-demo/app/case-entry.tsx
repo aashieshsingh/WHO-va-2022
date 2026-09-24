@@ -1,4 +1,5 @@
 import { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
+import { Picker } from "@react-native-picker/picker";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
@@ -41,6 +42,7 @@ export default function CaseEntryRoute() {
   const [entry, setEntry] = useState<CaseEntryData>(() => emptyCaseEntry());
   const [message, setMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const isAdmin = currentUser?.role === "admin";
 
   const updateText = (field: CaseEntryField, value: string) => {
     setEntry((current) => ({ ...current, [field]: value }));
@@ -72,22 +74,28 @@ export default function CaseEntryRoute() {
       <ScreenScroll>
         <ScreenHeader title="Case Entry" />
         <View style={styles.formPanel}>
-          {textFields.map(([field, label, keyboardType]) => (
-            <View key={field}>
-              <Text style={styles.fieldLabel}>{label}</Text>
-              <TextInput
-                keyboardType={keyboardType}
-                maxLength={field === "pinCode" ? 6 : undefined}
-                onChangeText={(value) => updateText(field, value)}
-                style={styles.textInput}
-                value={String(entry[field])}
-              />
-            </View>
-          ))}
-          <Text style={styles.fieldLabel}>Entry date</Text>
-          <Pressable accessibilityRole="button" onPress={() => pickDate("date")} style={styles.textInput}>
-            <Text>{entry.date || "Select entry date"}</Text>
-          </Pressable>
+          {textFields
+            .filter(([field]) => field !== "uid" || isAdmin)
+            .map(([field, label, keyboardType]) => (
+              <View key={field}>
+                <Text style={styles.fieldLabel}>{label}</Text>
+                <TextInput
+                  keyboardType={keyboardType}
+                  maxLength={field === "pinCode" ? 6 : undefined}
+                  onChangeText={(value) => updateText(field, value)}
+                  style={styles.textInput}
+                  value={String(entry[field])}
+                />
+              </View>
+            ))}
+          {isAdmin ? (
+            <>
+              <Text style={styles.fieldLabel}>Entry date</Text>
+              <Pressable accessibilityRole="button" onPress={() => pickDate("date")} style={styles.textInput}>
+                <Text>{entry.date || "Select entry date"}</Text>
+              </Pressable>
+            </>
+          ) : null}
           <Text style={styles.fieldLabel}>Death date</Text>
           <Pressable
             accessibilityRole="button"
@@ -97,33 +105,39 @@ export default function CaseEntryRoute() {
             <Text>{entry.deathDate || "Select death date"}</Text>
           </Pressable>
           <Text style={styles.fieldLabel}>Place of death</Text>
-          <View style={styles.actionStack}>
-            {(
-              [
-                ["hospital-death", "Hospital death"],
-                ["home-death", "Home death"],
-                ["on-the-way-to-hospital", "On the way to hospital"],
-                ["other", "Other place"]
-              ] as const
-            ).map(([deathPlace, label]) => (
-              <ActionButton
-                key={deathPlace}
-                label={deathPlace === entry.deathPlace ? `${label} selected` : label}
-                onPress={() => setEntry((current) => ({ ...current, deathPlace }))}
-                variant={deathPlace === entry.deathPlace ? "primary" : "secondary"}
-              />
-            ))}
+          <View style={styles.selectInput}>
+            <Picker
+              accessibilityLabel="Place of death"
+              mode="dropdown"
+              onValueChange={(deathPlace: CaseEntryData["deathPlace"]) =>
+                setEntry((current) => ({ ...current, deathPlace }))
+              }
+              selectedValue={entry.deathPlace}
+              style={styles.selectPicker}
+            >
+              <Picker.Item enabled={false} label="Select place of death" value="" />
+              <Picker.Item label="Hospital death" value="hospital-death" />
+              <Picker.Item label="Home death" value="home-death" />
+              <Picker.Item label="On the way to hospital" value="on-the-way-to-hospital" />
+              <Picker.Item label="Other place" value="other" />
+            </Picker>
           </View>
           <Text style={styles.fieldLabel}>Sex of the deceased</Text>
-          <View style={styles.actionStack}>
-            {(["female", "male", "undetermined"] as const).map((sex) => (
-              <ActionButton
-                key={sex}
-                label={sex === entry.deceasedSex ? `${sex} selected` : sex}
-                onPress={() => setEntry((current) => ({ ...current, deceasedSex: sex }))}
-                variant={sex === entry.deceasedSex ? "primary" : "secondary"}
-              />
-            ))}
+          <View style={styles.selectInput}>
+            <Picker
+              accessibilityLabel="Sex of the deceased"
+              mode="dropdown"
+              onValueChange={(deceasedSex: CaseEntryData["deceasedSex"]) =>
+                setEntry((current) => ({ ...current, deceasedSex }))
+              }
+              selectedValue={entry.deceasedSex}
+              style={styles.selectPicker}
+            >
+              <Picker.Item enabled={false} label="Select sex" value="" />
+              <Picker.Item label="Female" value="female" />
+              <Picker.Item label="Male" value="male" />
+              <Picker.Item label="Undetermined" value="undetermined" />
+            </Picker>
           </View>
           <Text style={styles.fieldLabel}>Age at death</Text>
           <TextInput

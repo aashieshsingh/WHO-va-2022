@@ -394,6 +394,21 @@ export const styles = StyleSheet.create({
     paddingVertical: 9,
     width: "100%"
   },
+  selectInput: {
+    backgroundColor: "#ffffff",
+    borderColor: "#9fb4ad",
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 6,
+    minHeight: 46,
+    overflow: "hidden",
+    width: "100%"
+  },
+  selectPicker: {
+    color: "#142a24",
+    minHeight: 46,
+    width: "100%"
+  },
   validText: {
     color: "#008a6a",
     fontSize: 13,

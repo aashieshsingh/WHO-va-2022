@@ -156,6 +156,7 @@ defineWhoVaElement();
 const LOCAL_CASE_ENTRIES_KEY = "who-va-demo-case-entries";
 const API_BASE_STORAGE_KEY = "who-va-demo-api-base";
 const editablePrefillQuestionNames = new Set(["Id10051"]);
+const respondentReviewQuestionNames = new Set(["Id10019", "Id10058"]);
 
 const configuredApiBase = (() => {
   const fromQuery = new URLSearchParams(window.location.search).get("apiBase");
@@ -598,7 +599,6 @@ const createWhoVaDataFromCaseEntry = (entry: CaseEntryData) => {
   const whoVaData = createWhoVaInitialDataFromPrefill({
     deceased: {
       givenNames: entry.deceasedFullName,
-      sex: entry.deceasedSex,
       ...(entry.ageAtDeath >= 12 ? { ageInYears: entry.ageAtDeath } : {}),
       dateOfDeath: entry.deathDate
     },
@@ -616,6 +616,12 @@ const createWhoVaDataFromCaseEntry = (entry: CaseEntryData) => {
   }
 
   return whoVaData as Record<string, unknown>;
+};
+
+const keepRespondentReviewQuestionsBlank = (data: Record<string, unknown>) => {
+  const next = { ...data };
+  for (const name of respondentReviewQuestionNames) delete next[name];
+  return next;
 };
 
 const showEntryOutput = (value: unknown) => {
@@ -998,13 +1004,14 @@ const showRolePage = (user: RegisteredUser) => {
 
 const applyCaseEntryToInstrument = async (caseEntry: CaseEntryData, whoVaData: Record<string, unknown>) => {
   const normalizedCaseEntry = normalizeCaseEntry(caseEntry);
+  const editableWhoVaData = keepRespondentReviewQuestionsBlank(whoVaData);
   currentCaseEntry = normalizedCaseEntry;
-  currentWhoVaData = whoVaData;
+  currentWhoVaData = editableWhoVaData;
   form?.setAttribute("draft-id", normalizedCaseEntry.uid);
   form?.setLockedQuestionNames(
-    Object.keys(whoVaData).filter((name) => !editablePrefillQuestionNames.has(name))
+    Object.keys(editableWhoVaData).filter((name) => !editablePrefillQuestionNames.has(name))
   );
-  form?.setData(whoVaData);
+  form?.setData(editableWhoVaData);
   setVisibleStep("instrument");
   whoVaShell?.scrollIntoView({ block: "start" });
 

@@ -139,17 +139,45 @@ interface WebDateInputProps extends Omit<React.InputHTMLAttributes<HTMLInputElem
   testID?: string;
 }
 
-function WebDateInput({ accessibilityLabel, onChangeText, style, testID, ...props }: WebDateInputProps) {
-  const flattenedStyle = (Array.isArray(style) ? style.flat(Infinity) : [style])
+interface WebSelectInputProps extends Omit<
+  React.SelectHTMLAttributes<HTMLSelectElement>,
+  "onChange" | "style"
+> {
+  accessibilityLabel?: string;
+  onChangeText: (value: string) => void;
+  style?: unknown;
+  testID?: string;
+}
+
+function flattenWebStyle(style: unknown): React.CSSProperties {
+  return (Array.isArray(style) ? style.flat(Infinity) : [style])
     .filter((entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null)
-    .reduce<Record<string, unknown>>((result, entry) => Object.assign(result, entry), {});
+    .reduce<Record<string, unknown>>(
+      (result, entry) => Object.assign(result, entry),
+      {}
+    ) as React.CSSProperties;
+}
+
+function WebDateInput({ accessibilityLabel, onChangeText, style, testID, ...props }: WebDateInputProps) {
   return (
     <input
       {...props}
       type="date"
       aria-label={accessibilityLabel}
       data-testid={testID}
-      style={flattenedStyle as React.CSSProperties}
+      style={flattenWebStyle(style)}
+      onChange={(event) => onChangeText(event.currentTarget.value)}
+    />
+  );
+}
+
+function WebSelectInput({ accessibilityLabel, onChangeText, style, testID, ...props }: WebSelectInputProps) {
+  return (
+    <select
+      {...props}
+      aria-label={accessibilityLabel}
+      data-testid={testID}
+      style={flattenWebStyle(style)}
       onChange={(event) => onChangeText(event.currentTarget.value)}
     />
   );
@@ -278,6 +306,7 @@ export const WhoVaForm = createWhoVaForm(
     View,
     Text,
     TextInput,
+    SelectInput: WebSelectInput,
     DateInput: WebDateInput,
     Pressable,
     ScrollView,
@@ -295,6 +324,7 @@ export const WhoVaQuestionControls = createWhoVaQuestionControls({
   View,
   Text,
   TextInput,
+  SelectInput: WebSelectInput,
   DateInput: WebDateInput,
   Pressable,
   Image
