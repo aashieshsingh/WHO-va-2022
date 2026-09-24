@@ -42,6 +42,8 @@ const statusLabel: Record<DashboardStatus, string> = {
   final: "Final"
 };
 
+const DASHBOARD_PAGE_SIZE = 10;
+
 function caseUidFromCompleted(submission: CompletedSubmission): string | undefined {
   const caseUid = submission.result.data.__caseUid;
   return typeof caseUid === "string" ? caseUid : submission.caseEntry?.uid;
@@ -64,6 +66,7 @@ export default function DashboardRoute() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [activeEntryId, setActiveEntryId] = useState<string | undefined>();
   const [pushApiBaseUrl, setPushApiBaseUrl] = useState("");
+  const [page, setPage] = useState(1);
   const userMap = new Map<string, UserDashboard["user"]>();
   for (const user of users) userMap.set(user.userId, user);
   if (currentUser) userMap.set(currentUser.userId, currentUser);
@@ -73,7 +76,8 @@ export default function DashboardRoute() {
   const visibleCompleted = currentUser
     ? completed.filter((submission) => {
         const caseUid = caseUidFromCompleted(submission);
-        const submissionUserId = submission.userId ?? (caseUid ? allCasesByUid.get(caseUid)?.userId : undefined);
+        const submissionUserId =
+          submission.userId ?? (caseUid ? allCasesByUid.get(caseUid)?.userId : undefined);
         return submissionUserId === currentUser.userId;
       })
     : [];
@@ -182,23 +186,24 @@ export default function DashboardRoute() {
     });
   }
 
-  const dashboards = [...entries]
-    .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime())
-    .reduce<UserDashboard[]>((groups, entry) => {
-      let group = groups.find((candidate) => candidate.user.userId === entry.userId);
-      if (!group) {
-        const user = userMap.get(entry.userId) ?? {
-          userId: entry.userId,
-          name: entry.userId === "unknown-user" ? "Unknown user" : entry.userId,
-          email: ""
-        };
-        group = { user, entries: [], pending: 0, drafted: 0, final: 0 };
-        groups.push(group);
-      }
-      group.entries.push(entry);
-      group[entry.status] += 1;
-      return groups;
-    }, []);
+  const sortedEntries = [...entries].sort(
+    (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
+  );
+  const dashboards = sortedEntries.reduce<UserDashboard[]>((groups, entry) => {
+    let group = groups.find((candidate) => candidate.user.userId === entry.userId);
+    if (!group) {
+      const user = userMap.get(entry.userId) ?? {
+        userId: entry.userId,
+        name: entry.userId === "unknown-user" ? "Unknown user" : entry.userId,
+        email: ""
+      };
+      group = { user, entries: [], pending: 0, drafted: 0, final: 0 };
+      groups.push(group);
+    }
+    group.entries.push(entry);
+    group[entry.status] += 1;
+    return groups;
+  }, []);
   const totals = dashboards.reduce(
     (summary, dashboard) => {
       summary.pending += dashboard.pending;
@@ -208,6 +213,19 @@ export default function DashboardRoute() {
     },
     { pending: 0, drafted: 0, final: 0 }
   );
+  const pageCount = Math.max(1, Math.ceil(sortedEntries.length / DASHBOARD_PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const pageEntries = sortedEntries.slice(
+    (currentPage - 1) * DASHBOARD_PAGE_SIZE,
+    currentPage * DASHBOARD_PAGE_SIZE
+  );
+  const pageEntryKeys = new Set(pageEntries.map((entry) => entry.userId + ":" + entry.id));
+  const paginatedDashboards = dashboards
+    .map((dashboard) => ({
+      ...dashboard,
+      entries: dashboard.entries.filter((entry) => pageEntryKeys.has(entry.userId + ":" + entry.id))
+    }))
+    .filter((dashboard) => dashboard.entries.length > 0);
 
   const openEntryForm = (entry: DashboardEntry) => {
     if (entry.route) router.push(entry.route);
@@ -250,7 +268,16 @@ export default function DashboardRoute() {
     void pushToServer(pushApiBaseUrl, [entry.completedSubmissionId])
       .then((result) => {
         setPushFailed(result.failed > 0);
-        setPushMessage(`Pushed ${result.pushed}. ${result.skipped} skipped. ${result.failed} failed.`);
+        setPushMessage(
+          "Pushed " +
+            result.pushed +
+            ". " +
+            result.skipped +
+            " skipped. " +
+            result.failed +
+            " failed." +
+            (result.errors[0] ? " " + result.errors[0] : "")
+        );
       })
       .catch((error: unknown) => {
         setPushFailed(true);
@@ -306,7 +333,7 @@ export default function DashboardRoute() {
         {dashboards.length === 0 ? (
           <EmptyState message="No WHO form entries are saved on this device yet." />
         ) : (
-          dashboards.map((dashboard) => (
+          paginatedDashboards.map((dashboard) => (
             <View key={dashboard.user.userId} style={styles.dashboardGroup}>
               <Text style={styles.listItemTitle}>{userLabel(dashboard.user)}</Text>
               <Text style={styles.listItemMeta}>{dashboard.user.email || dashboard.user.userId}</Text>
@@ -379,6 +406,29 @@ export default function DashboardRoute() {
             </View>
           ))
         )}
+        {pageCount > 1 ? (
+          <View style={styles.paginationRow}>
+            <Pressable
+              accessibilityRole="button"
+              disabled={currentPage === 1}
+              onPress={() => setPage(Math.max(1, currentPage - 1))}
+              style={[styles.smallPrimaryButton, currentPage === 1 && styles.disabledButton]}
+            >
+              <Text style={styles.smallPrimaryButtonText}>Previous</Text>
+            </Pressable>
+            <Text style={styles.paginationText}>
+              Page {currentPage} of {pageCount}
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              disabled={currentPage === pageCount}
+              onPress={() => setPage(Math.min(pageCount, currentPage + 1))}
+              style={[styles.smallPrimaryButton, currentPage === pageCount && styles.disabledButton]}
+            >
+              <Text style={styles.smallPrimaryButtonText}>Next</Text>
+            </Pressable>
+          </View>
+        ) : null}
       </ScreenScroll>
     </DemoChrome>
   );

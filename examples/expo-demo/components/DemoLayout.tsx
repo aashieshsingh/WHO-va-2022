@@ -215,6 +215,19 @@ export const styles = StyleSheet.create({
     fontWeight: "700",
     marginTop: 6
   },
+  paginationRow: {
+    alignItems: "center",
+    columnGap: 12,
+    flexDirection: "row",
+    justifyContent: "center",
+    marginTop: 16,
+    width: "100%"
+  },
+  paginationText: {
+    color: "#425b53",
+    fontSize: 14,
+    fontWeight: "700"
+  },
   pendingText: {
     color: "#7c5800",
     fontSize: 13,

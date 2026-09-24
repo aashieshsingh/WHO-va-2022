@@ -1,7 +1,14 @@
-import type { SubmissionData, WhoVaDraft } from "@drguptavivek/who-2022-va";
+import {
+  validateSubmission,
+  whoVa2022Instrument,
+  type SubmissionData,
+  type SubmissionValidationResult,
+  type WhoVaDraft
+} from "@drguptavivek/who-2022-va";
 
 import {
   markCompletedSubmissionPushed,
+  validateCaseEntryData,
   type CaseEntryData,
   type CompletedSubmission,
   type RegisteredUser,
@@ -66,7 +73,7 @@ function buildCompletedPayload(
   caseEntry: CaseEntryData,
   uid: string,
   whoVaData: SubmissionData,
-  submission: CompletedSubmission,
+  validation: SubmissionValidationResult,
   draft?: WhoVaDraft
 ): SaveFormEntryPayload {
   return {
@@ -76,9 +83,22 @@ function buildCompletedPayload(
     caseEntry,
     whoVaData: draft?.data ?? whoVaData,
     status: "completed",
-    submission: submission.result.data,
-    validationIssues: submission.result.issues
+    submission: validation.data,
+    validationIssues: validation.issues
   };
+}
+
+function validateCompletedSubmissionForPush(
+  caseEntry: CaseEntryData,
+  submission: CompletedSubmission
+): { error?: string; validation: SubmissionValidationResult } {
+  const caseValidationError = validateCaseEntryData(caseEntry);
+  const validation = validateSubmission(whoVa2022Instrument, submission.result.data);
+  let error = caseValidationError;
+  if (!error && !validation.valid) {
+    error = validation.issues[0]?.message ?? "Required answers are missing.";
+  }
+  return { error, validation };
 }
 
 export async function pushLocalDataToServer({
@@ -115,13 +135,14 @@ export async function pushLocalDataToServer({
     const storedCase = uid ? casesByUid.get(uid) : undefined;
     const caseEntry = storedCase?.caseEntry ?? submission.caseEntry;
     const submissionUserId = submission.userId ?? storedCase?.userId;
-    if (
-      !uid ||
-      !caseEntry ||
-      (submissionUserId && submissionUserId !== currentUser.userId) ||
-      !submission.result.valid
-    ) {
+    if (!uid || !caseEntry || (submissionUserId && submissionUserId !== currentUser.userId)) {
       result.skipped += 1;
+      continue;
+    }
+    const { error: validationError, validation } = validateCompletedSubmissionForPush(caseEntry, submission);
+    if (validationError) {
+      result.failed += 1;
+      result.errors.push(uid + ": Form is incomplete. " + validationError);
       continue;
     }
     try {
@@ -132,7 +153,7 @@ export async function pushLocalDataToServer({
           caseEntry,
           uid,
           storedCase?.whoVaData ?? submission.result.data,
-          submission,
+          validation,
           draftsById.get(uid)
         )
       );

@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { createServer as createViteServer } from "vite";
+import { validateSubmission, whoVa2022Instrument } from "@drguptavivek/who-2022-va";
 
 import { createPostgresPool } from "./db.mjs";
 import { runMigrations } from "./migrate.mjs";
@@ -1173,8 +1174,18 @@ async function saveFormEntry(payload) {
   const caseEntry = payload.caseEntry && typeof payload.caseEntry === "object" ? payload.caseEntry : {};
   validateCaseEntry(caseEntry);
   const whoVaData = payload.whoVaData && typeof payload.whoVaData === "object" ? payload.whoVaData : {};
-  const submission = payload.submission && typeof payload.submission === "object" ? payload.submission : null;
-  const validationIssues = Array.isArray(payload.validationIssues) ? payload.validationIssues : [];
+  let submission = payload.submission && typeof payload.submission === "object" ? payload.submission : null;
+  let validationIssues = Array.isArray(payload.validationIssues) ? payload.validationIssues : [];
+  if (status === "completed") {
+    if (!submission) throw badRequest("A completed WHO VA submission is required before server push");
+    const validation = validateSubmission(whoVa2022Instrument, submission);
+    if (!validation.valid) {
+      const detail = validation.issues[0]?.message ?? "Required answers are missing.";
+      throw badRequest("WHO VA form is incomplete. " + detail);
+    }
+    submission = validation.data;
+    validationIssues = validation.issues;
+  }
 
   const previousResult = await pool.query(
     `
