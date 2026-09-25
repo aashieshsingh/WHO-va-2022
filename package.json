@@ -48,7 +48,7 @@
     }
   },
   "scripts": {
-    "predev": "pnpm build",
+    "predev": "npm run build",
     "dev": "node demo/server.mjs",
     "dev:vite": "vite demo --host 127.0.0.1",
     "dev:db": "node demo/server.mjs",
