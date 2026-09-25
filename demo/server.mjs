@@ -550,7 +550,7 @@ async function requireAdminRequester(request, url) {
     return;
   }
   const auth = authFromRequest(request, url);
-  const requester = await loadUserByAuthKey(auth.userId, auth.authKey);
+  const requester = await loadAuthenticatedUser(auth);
   if (requester.role !== "admin") {
     const error = new Error("Only admin users can register users");
     error.statusCode = 403;
@@ -998,7 +998,8 @@ async function loadUserByAccessToken(accessToken) {
 
 async function loadAuthenticatedUser(auth) {
   if (auth.accessToken) return loadUserByAccessToken(auth.accessToken);
-  return loadUserByAuthKey(auth.userId, auth.authKey);
+  if (auth.userId && auth.authKey) return loadUserByAuthKey(auth.userId, auth.authKey);
+  throw unauthorized("Authorization is required");
 }
 
 async function requireAuthenticatedUser(request, url) {

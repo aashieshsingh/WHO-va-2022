@@ -71,6 +71,8 @@ interface ChangePasswordPayload {
 interface LoginResult {
   user: RegisteredUser;
   entries: SavedCaseEntry[];
+  accessToken: string;
+  refreshToken: string;
 }
 
 interface SavedFormEntry {
@@ -168,14 +170,52 @@ const configuredApiBase = (() => {
 
 const apiUrl = (path: string) => `${configuredApiBase}${path.startsWith("/") ? path : `/${path}`}`;
 
+const refreshAuthTokens = async (): Promise<boolean> => {
+  if (!currentAuthTokens?.refreshToken) return false;
+  const response = await fetch(apiUrl("/api/refresh-token"), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ refreshToken: currentAuthTokens.refreshToken })
+  });
+  const responseText = await response.text();
+  let body: {
+    ok?: boolean;
+    user?: RegisteredUser;
+    accessToken?: string;
+    refreshToken?: string;
+  };
+  try {
+    body = responseText ? JSON.parse(responseText) : {};
+  } catch {
+    currentAuthTokens = undefined;
+    return false;
+  }
+  if (!response.ok || !body.ok || !body.accessToken || !body.refreshToken) {
+    currentAuthTokens = undefined;
+    return false;
+  }
+  currentAuthTokens = {
+    accessToken: body.accessToken,
+    refreshToken: body.refreshToken
+  };
+  if (body.user) currentUser = body.user;
+  return true;
+};
+
 const fetchApi = async (path: string, init?: RequestInit) => {
   const url = path.startsWith("http://") || path.startsWith("https://") ? path : apiUrl(path);
   try {
-    return await fetch(url, init);
+    let response = await fetch(url, init);
+    if (response.status === 401 && (await refreshAuthTokens())) {
+      const headers = new Headers(init?.headers);
+      headers.set("authorization", `Bearer ${currentAuthTokens?.accessToken ?? ""}`);
+      response = await fetch(url, { ...init, headers });
+    }
+    return response;
   } catch (error) {
     if (error instanceof TypeError) {
       throw new Error(
-        `Could not reach the WHO VA server at ${url}. Start the DB-backed demo server with pnpm dev, or open this page with ?apiBase=http://SERVER_IP:5173 when syncing from another device.`
+        `Could not reach the WHO VA server at ${url}. Start the DB-backed demo server with npm run dev, or open this page with ?apiBase=http://SERVER_IP:5173 when syncing from another device.`
       );
     }
     throw error;
@@ -257,6 +297,7 @@ const whoVaOutput = document.querySelector<HTMLOutputElement>("#who-va-output");
 let currentCaseEntry: CaseEntryData | undefined;
 let currentWhoVaData: Record<string, unknown> | undefined;
 let currentUser: RegisteredUser | undefined;
+let currentAuthTokens: { accessToken: string; refreshToken: string } | undefined;
 let managedUsers: RegisteredUser[] = [];
 
 const deathPlaceLabels: Record<DeathPlace, string> = {
@@ -930,12 +971,25 @@ const loginUser = async (payload: LoginPayload): Promise<LoginResult> => {
     ok: boolean;
     user?: RegisteredUser;
     entries?: SavedCaseEntry[];
+    accessToken?: string;
+    refreshToken?: string;
     error?: string;
   }>(response);
-  if (!response.ok || !body.ok || !body.user) {
+  if (
+    !response.ok ||
+    !body.ok ||
+    !body.user ||
+    !body.accessToken ||
+    !body.refreshToken
+  ) {
     throw new Error(body.error ?? `Login failed. Status: ${response.status}.`);
   }
-  return { user: body.user, entries: body.entries ?? [] };
+  return {
+    user: body.user,
+    entries: body.entries ?? [],
+    accessToken: body.accessToken,
+    refreshToken: body.refreshToken
+  };
 };
 
 const showLoginOutput = (value: unknown) => {
@@ -945,6 +999,18 @@ const showLoginOutput = (value: unknown) => {
 };
 
 const logoutCurrentUser = () => {
+  const previousTokens = currentAuthTokens;
+  if (previousTokens) {
+    void fetchApi("/api/logout", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${previousTokens.accessToken}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({ refreshToken: previousTokens.refreshToken })
+    }).catch(() => undefined);
+  }
+  currentAuthTokens = undefined;
   const previousUser = currentUser;
   currentUser = undefined;
   currentCaseEntry = undefined;
@@ -1026,9 +1092,11 @@ const applyCaseEntryToInstrument = async (caseEntry: CaseEntryData, whoVaData: R
 const formEntriesApiUrl = () => apiUrl("/api/form-entries");
 
 const authHeaders = (): Record<string, string> =>
-  currentUser?.userId && currentUser.authKey
-    ? { "x-user-id": currentUser.userId, "x-auth-key": currentUser.authKey }
-    : {};
+  currentAuthTokens?.accessToken
+    ? { authorization: `Bearer ${currentAuthTokens.accessToken}` }
+    : currentUser?.userId && currentUser.authKey
+      ? { "x-user-id": currentUser.userId, "x-auth-key": currentUser.authKey }
+      : {};
 
 const dashboardApiUrl = () => {
   return apiUrl("/api/dashboard");
@@ -1554,7 +1622,8 @@ loginForm?.addEventListener("submit", (event) => {
     submitButton?.setAttribute("disabled", "true");
     showLoginOutput("Signing in...");
     try {
-      const { user, entries } = await loginUser(readLoginData(loginForm));
+      const { user, entries, accessToken, refreshToken } = await loginUser(readLoginData(loginForm));
+      currentAuthTokens = { accessToken, refreshToken };
       const syncedCount = cacheSyncedCaseEntries(entries);
       showLoginOutput(`Login successful. Role: ${user.role === "admin" ? "Admin" : "Data entry"}`);
       if (syncedCount > 0) pickerStatusMessage = `Synced ${syncedCount} entries from the server.`;
